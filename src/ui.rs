@@ -1,0 +1,1558 @@
+use crate::diff::{self, Comparison, Line};
+use crate::surface::{self, Change, DiffSurface, SurfaceEvent};
+use gpui_kit::component::{
+    Disableable, Selectable, Sizable,
+    button::{Button, ButtonVariants},
+    input::{EditorState, InputEvent},
+    theme::{Theme, ThemeMode},
+};
+use gpui_kit::prelude::FluentBuilder;
+use gpui_kit::*;
+use std::{ops::Range, path::PathBuf, sync::Arc};
+
+const BG: u32 = surface::BACKGROUND;
+const PANEL: u32 = surface::PANEL;
+const BORDER: u32 = surface::BORDER;
+const MUTED: u32 = 0x8491a3;
+const TEXT: u32 = 0xd6dfeb;
+const GREEN: u32 = 0x83d6ad;
+const RED: u32 = 0xf0a1a8;
+
+const DEMO_LEFT: &str = include_str!("../examples/before.rs");
+const DEMO_RIGHT: &str = include_str!("../examples/after.rs");
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Side {
+    Both,
+    Left,
+    Right,
+}
+
+#[derive(Clone, Copy)]
+struct DisplayRow {
+    source: usize,
+    side: Side,
+}
+
+struct BufferSnapshot {
+    left: String,
+    right: String,
+}
+
+struct DiffApp {
+    updater: Entity<crate::update_ui::UpdateControl>,
+    surface: Entity<DiffSurface>,
+    _surface_subscription: Subscription,
+    left: Entity<EditorState>,
+    right: Entity<EditorState>,
+    left_name: String,
+    right_name: String,
+    left_path: Option<PathBuf>,
+    right_path: Option<PathBuf>,
+    left_saved: String,
+    right_saved: String,
+    left_bom: bool,
+    right_bom: bool,
+    left_dirty: bool,
+    right_dirty: bool,
+    undo: Vec<BufferSnapshot>,
+    redo: Vec<BufferSnapshot>,
+    right_current: String,
+    saving: bool,
+    close_prompt: bool,
+    pending_selection: Option<usize>,
+    horizontal: [f32; 2],
+    _right_subscription: Subscription,
+    comparison: Arc<Comparison>,
+    display_rows: Arc<Vec<DisplayRow>>,
+    change_rows: Vec<usize>,
+    selected: Option<usize>,
+    scroll: UniformListScrollHandle,
+    focus: FocusHandle,
+    unified: bool,
+    whitespace: diff::Whitespace,
+    highlight: diff::HighlightMode,
+    show_changes: bool,
+    busy: bool,
+    revision: usize,
+    status: String,
+    comparison_task: Option<Task<()>>,
+}
+
+impl DiffApp {
+    fn new(paths: &[PathBuf], window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let mut left_text = DEMO_LEFT.to_owned();
+        let mut right_text = DEMO_RIGHT.to_owned();
+        let mut left_name = "before.rs".to_owned();
+        let mut right_name = "after.rs".to_owned();
+        let mut status = "Demo comparison · Open files or edit the sample text".to_owned();
+        let mut errors = Vec::new();
+        let (mut left_path, mut right_path) = (None, None);
+        let (mut left_bom, mut right_bom) = (false, false);
+        if !paths.is_empty() {
+            left_text.clear();
+            right_text.clear();
+            left_name = paths[0].display().to_string();
+            right_name = paths[1].display().to_string();
+        }
+        for (index, path) in paths.iter().enumerate() {
+            match diff::read_text(path) {
+                Ok((text, bom)) => {
+                    if index == 0 {
+                        left_text = text;
+                        left_name = path.display().to_string();
+                        left_path = Some(path.clone());
+                        left_bom = bom;
+                    } else {
+                        right_text = text;
+                        right_name = path.display().to_string();
+                        right_path = Some(path.clone());
+                        right_bom = bom;
+                    }
+                    status = "Files loaded · UTF-8".into();
+                }
+                Err(error) => errors.push(format!("Could not open {}: {error}", path.display())),
+            }
+        }
+        if !errors.is_empty() {
+            status = errors.join(" · ");
+        }
+        let left = cx.new(|cx| {
+            EditorState::new(window, cx)
+                .language(surface::language(&left_name))
+                .default_value(left_text.clone())
+        });
+        let right = cx.new(|cx| {
+            EditorState::new(window, cx)
+                .language(surface::language(&right_name))
+                .default_value(right_text.clone())
+        });
+        let surface = cx.new(|cx| {
+            DiffSurface::new(
+                vec![left.clone(), right.clone()],
+                vec![true, false],
+                window,
+                cx,
+            )
+        });
+        let surface_subscription = cx.subscribe_in(
+            &surface,
+            window,
+            |this, _, event: &SurfaceEvent, window, cx| match *event {
+                SurfaceEvent::Apply { index, .. } => this.apply_right(index, window, cx),
+                SurfaceEvent::Select(index) => this.select_change(index, cx),
+            },
+        );
+        let right_subscription = cx.subscribe(&right, |this, state, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Change) {
+                let text = state.read(cx).value().to_string();
+                if text == this.right_current {
+                    return;
+                }
+                this.remember_buffers(cx);
+                this.right_current = text;
+                this.right_dirty = this.right_current != this.right_saved;
+                this.compare(cx);
+            }
+        });
+        let comparison = Arc::new(diff::compare(&left_text, &right_text, false));
+        let focus = cx.focus_handle();
+        window.focus(&focus, cx);
+        let mut this = Self {
+            updater: cx.new(|_| crate::update_ui::UpdateControl::new()),
+            surface,
+            _surface_subscription: surface_subscription,
+            left,
+            right,
+            left_name,
+            right_name,
+            left_path,
+            right_path,
+            left_saved: left_text,
+            right_saved: right_text.clone(),
+            right_current: right_text,
+            left_bom,
+            right_bom,
+            left_dirty: false,
+            right_dirty: false,
+            undo: Vec::new(),
+            redo: Vec::new(),
+            saving: false,
+            close_prompt: false,
+            pending_selection: None,
+            horizontal: [0., 0.],
+            _right_subscription: right_subscription,
+            comparison,
+            display_rows: Arc::default(),
+            change_rows: Vec::new(),
+            selected: None,
+            scroll: UniformListScrollHandle::new(),
+            focus,
+            unified: false,
+            whitespace: diff::Whitespace::Exact,
+            highlight: diff::HighlightMode::Words,
+            show_changes: false,
+            busy: false,
+            revision: 0,
+            status,
+            comparison_task: None,
+        };
+        this.rebuild_rows();
+        this.update_surface(cx);
+        this
+    }
+
+    fn update_surface(&mut self, cx: &mut Context<Self>) {
+        let changes = self
+            .comparison
+            .edits
+            .iter()
+            .enumerate()
+            .map(|(id, edit)| Change {
+                id,
+                ranges: vec![edit.left.clone(), edit.right.clone()],
+                color: if edit.left.is_empty() {
+                    surface::INSERTED
+                } else if edit.right.is_empty() {
+                    surface::DELETED
+                } else {
+                    surface::MODIFIED
+                },
+                resolved: false,
+            })
+            .collect();
+        let inline = self
+            .comparison
+            .inline_ranges(self.highlight)
+            .into_iter()
+            .collect();
+        self.surface.update(cx, |surface, cx| {
+            surface.highlighting = self.highlight != diff::HighlightMode::None;
+            surface.set_changes(changes, self.selected, inline, cx);
+        });
+    }
+
+    fn rebuild_rows(&mut self) {
+        let mut rows = Vec::new();
+        let mut changes = Vec::new();
+        let mut index = 0;
+        while index < self.comparison.rows.len() {
+            let row = &self.comparison.rows[index];
+            if self.comparison.hunks.binary_search(&index).is_ok() {
+                changes.push(rows.len());
+            }
+            if self.unified && row.changed {
+                let start = index;
+                while index < self.comparison.rows.len() && self.comparison.rows[index].changed {
+                    index += 1;
+                }
+                for side in [Side::Left, Side::Right] {
+                    for source in start..index {
+                        let row = &self.comparison.rows[source];
+                        let line = if side == Side::Left {
+                            &row.left
+                        } else {
+                            &row.right
+                        };
+                        if line.is_some() {
+                            rows.push(DisplayRow { source, side });
+                        }
+                    }
+                }
+            } else {
+                rows.push(DisplayRow {
+                    source: index,
+                    side: Side::Both,
+                });
+                index += 1;
+            }
+        }
+        self.display_rows = Arc::new(rows);
+        self.change_rows = changes;
+        self.selected = None;
+        self.scroll = UniformListScrollHandle::new();
+    }
+
+    fn compare(&mut self, cx: &mut Context<Self>) {
+        if self.saving {
+            return;
+        }
+        let left = self.left.read(cx).value().to_string();
+        let right = self.right.read(cx).value().to_string();
+        if left.len() > diff::MAX_BYTES || right.len() > diff::MAX_BYTES {
+            self.status = "Text is too large. The limit is 2 MiB per side.".into();
+            cx.notify();
+            return;
+        }
+        self.busy = true;
+        self.revision += 1;
+        let revision = self.revision;
+        let whitespace = self.whitespace;
+        let task = cx.background_executor().spawn(async move {
+            Arc::new(diff::compare_with_whitespace(&left, &right, whitespace))
+        });
+        self.comparison_task = Some(cx.spawn(async move |this, cx| {
+            let comparison = task.await;
+            let _ = this.update(cx, |this, cx| {
+                if this.revision != revision {
+                    return;
+                }
+                this.comparison = comparison;
+                this.busy = false;
+                this.rebuild_rows();
+                this.update_surface(cx);
+                if let Some(index) = this
+                    .pending_selection
+                    .take()
+                    .filter(|_| !this.change_rows.is_empty())
+                {
+                    this.select_change(index.min(this.change_rows.len() - 1), cx);
+                }
+                this.status = if this.left_dirty || this.right_dirty {
+                    "Unsaved changes · Ctrl+S to save · Undo / Redo: Ctrl+Z / Ctrl+Shift+Z"
+                } else if this.comparison.hunks.is_empty() {
+                    if this.whitespace != diff::Whitespace::Exact {
+                        "No differences with whitespace ignored"
+                    } else {
+                        "No differences (CRLF and LF are treated equally)"
+                    }
+                } else {
+                    "Comparison ready · F7 next change · Shift+F7 previous change"
+                }
+                .into();
+                cx.notify();
+            });
+        }));
+        cx.notify();
+    }
+
+    fn open_file(&mut self, side: Side, window: &mut Window, cx: &mut Context<Self>) {
+        if self.busy || self.saving {
+            return;
+        }
+        if (side == Side::Right && self.right_dirty) || (side == Side::Left && self.left_dirty) {
+            self.status = "Save or undo changes to this side before opening another file.".into();
+            cx.notify();
+            return;
+        }
+        self.busy = true;
+        cx.notify();
+        let picker = cx.prompt_for_paths(PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: Some("Choose a UTF-8 text file".into()),
+        });
+        cx.spawn_in(window, async move |this, cx| match picker.await {
+            Ok(Ok(Some(paths))) => {
+                let Some(path) = paths.into_iter().next() else {
+                    let _ = this.update(cx, |this, cx| {
+                        this.busy = false;
+                        cx.notify();
+                    });
+                    return;
+                };
+                let name = path.display().to_string();
+                let loaded_path = path.clone();
+                let result = cx
+                    .background_executor()
+                    .spawn(async move { diff::read_text(&path) })
+                    .await;
+                let _ = this.update_in(cx, |this, window, cx| match result {
+                    Ok((text, bom)) => {
+                        this.undo.clear();
+                        this.redo.clear();
+                        if side == Side::Left {
+                            this.left_path = Some(loaded_path);
+                            this.left_saved = text.clone();
+                            this.left_bom = bom;
+                            this.left_dirty = false;
+                            this.left
+                                .update(cx, |state, cx| state.set_value(text, window, cx));
+                            this.left_name = name;
+                        } else {
+                            this.right_path = Some(loaded_path);
+                            this.right_saved = text.clone();
+                            this.right_current = text.clone();
+                            this.right_bom = bom;
+                            this.right_dirty = false;
+                            this.undo.clear();
+                            this.redo.clear();
+                            this.right
+                                .update(cx, |state, cx| state.set_value(text, window, cx));
+                            this.right_name = name;
+                        }
+                        this.left.update(cx, |state, cx| {
+                            state.set_highlighter(surface::language(&this.left_name), cx)
+                        });
+                        this.right.update(cx, |state, cx| {
+                            state.set_highlighter(surface::language(&this.right_name), cx)
+                        });
+                        window.focus(&this.focus, cx);
+                        this.compare(cx);
+                    }
+                    Err(error) => {
+                        this.busy = false;
+                        this.status = format!("Could not open {name}: {error}");
+                        cx.notify();
+                    }
+                });
+            }
+            Ok(Ok(None)) => {
+                let _ = this.update(cx, |this, cx| {
+                    this.busy = false;
+                    cx.notify();
+                });
+            }
+            error => {
+                let _ = this.update(cx, |this, cx| {
+                    this.busy = false;
+                    this.status = format!("File picker failed: {error:?}");
+                    cx.notify();
+                });
+            }
+        })
+        .detach();
+    }
+
+    fn navigate(&mut self, forward: bool, cx: &mut Context<Self>) {
+        let count = self.change_rows.len();
+        if count == 0 || self.busy || self.saving {
+            return;
+        }
+        let index = match self.selected {
+            None => {
+                if forward {
+                    0
+                } else {
+                    count - 1
+                }
+            }
+            Some(index) => {
+                if forward {
+                    (index + 1) % count
+                } else {
+                    (index + count - 1) % count
+                }
+            }
+        };
+        self.select_change(index, cx);
+    }
+
+    fn select_change(&mut self, index: usize, cx: &mut Context<Self>) {
+        if self.busy || self.saving {
+            return;
+        }
+        if let Some(&row) = self.change_rows.get(index) {
+            self.selected = Some(index);
+            self.scroll.scroll_to_item(row, ScrollStrategy::Center);
+            self.surface
+                .update(cx, |surface, cx| surface.select(index, false, None, cx));
+            cx.notify();
+        }
+    }
+
+    fn swap(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.busy || self.saving || self.right_dirty || self.left_dirty {
+            return;
+        }
+        let left = self.left.read(cx).value();
+        let right = self.right.read(cx).value();
+        self.left
+            .update(cx, |state, cx| state.set_value(right, window, cx));
+        self.right
+            .update(cx, |state, cx| state.set_value(left, window, cx));
+        std::mem::swap(&mut self.left_name, &mut self.right_name);
+        std::mem::swap(&mut self.left_path, &mut self.right_path);
+        std::mem::swap(&mut self.left_saved, &mut self.right_saved);
+        std::mem::swap(&mut self.left_bom, &mut self.right_bom);
+        self.right_dirty = self.right.read(cx).value().as_ref() != self.right_saved;
+        self.right_current = self.right.read(cx).value().to_string();
+        self.left.update(cx, |state, cx| {
+            state.set_highlighter(surface::language(&self.left_name), cx)
+        });
+        self.right.update(cx, |state, cx| {
+            state.set_highlighter(surface::language(&self.right_name), cx)
+        });
+        self.undo.clear();
+        self.redo.clear();
+        self.horizontal = [0., 0.];
+        window.focus(&self.focus, cx);
+        self.compare(cx);
+    }
+
+    fn snapshot(&self, cx: &Context<Self>) -> BufferSnapshot {
+        BufferSnapshot {
+            left: self.left.read(cx).value().to_string(),
+            right: self.right_current.clone(),
+        }
+    }
+
+    fn remember_buffers(&mut self, cx: &Context<Self>) {
+        self.redo.clear();
+        self.undo.push(self.snapshot(cx));
+        while self.undo.len() > 128
+            || self
+                .undo
+                .iter()
+                .map(|s| s.left.len() + s.right.len())
+                .sum::<usize>()
+                > 32 * 1024 * 1024
+        {
+            self.undo.remove(0);
+        }
+    }
+
+    fn apply_right(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        if self.busy || self.saving {
+            return;
+        }
+        let left = self.left.read(cx).value().to_string();
+        let right = self.right.read(cx).value().to_string();
+        match self.comparison.apply_right(index, &left, &right) {
+            Ok(text) => {
+                self.remember_buffers(cx);
+                self.right_dirty = text != self.right_saved;
+                self.right_current = text.clone();
+                self.right
+                    .update(cx, |state, cx| state.set_value(text, window, cx));
+                self.pending_selection = Some(index);
+                self.compare(cx);
+            }
+            Err(error) => {
+                self.status = error;
+                cx.notify();
+            }
+        }
+    }
+
+    fn apply_left(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        if self.busy || self.saving {
+            return;
+        }
+        let left = self.left.read(cx).value().to_string();
+        let right = self.right.read(cx).value().to_string();
+        match self.comparison.apply_left(index, &left, &right) {
+            Ok(text) => {
+                self.remember_buffers(cx);
+                self.left_dirty = text != self.left_saved;
+                self.left
+                    .update(cx, |state, cx| state.set_value(text, window, cx));
+                self.pending_selection = Some(index);
+                self.compare(cx);
+            }
+            Err(error) => {
+                self.status = error;
+                cx.notify();
+            }
+        }
+    }
+
+    fn apply_selected(&mut self, to_left: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(index) = self.selected {
+            if to_left {
+                self.apply_left(index, window, cx);
+            } else {
+                self.apply_right(index, window, cx);
+            }
+        }
+    }
+
+    fn undo_right(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.busy || self.saving {
+            return;
+        }
+        if let Some(snapshot) = self.undo.pop() {
+            self.redo.push(self.snapshot(cx));
+            self.restore_buffers(snapshot, window, cx);
+            self.compare(cx);
+        }
+    }
+
+    fn redo_right(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.busy || self.saving {
+            return;
+        }
+        if let Some(snapshot) = self.redo.pop() {
+            self.undo.push(self.snapshot(cx));
+            self.restore_buffers(snapshot, window, cx);
+            self.compare(cx);
+        }
+    }
+
+    fn restore_buffers(
+        &mut self,
+        snapshot: BufferSnapshot,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.left_dirty = snapshot.left != self.left_saved;
+        self.right_dirty = snapshot.right != self.right_saved;
+        self.right_current = snapshot.right.clone();
+        for (editor, text) in [(&self.left, snapshot.left), (&self.right, snapshot.right)] {
+            let selection = editor.read(cx).selected_range();
+            let start = text.floor_char_boundary(selection.start.min(text.len()));
+            let end = text.floor_char_boundary(selection.end.min(text.len()));
+            editor.update(cx, |state, cx| {
+                state.set_value(text, window, cx);
+                state.set_selected_range(start..end, cx);
+            });
+        }
+        self.right.update(cx, |state, cx| state.focus(window, cx));
+        self.pending_selection = None;
+    }
+
+    fn revert_right(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.busy || self.saving || !self.right_dirty {
+            return;
+        }
+        self.remember_buffers(cx);
+        self.right_current = self.right_saved.clone();
+        self.right.update(cx, |state, cx| {
+            state.set_value(self.right_saved.clone(), window, cx)
+        });
+        self.right_dirty = false;
+        self.compare(cx);
+    }
+
+    fn save_files(&mut self, side: Side, close: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if self.saving {
+            return;
+        }
+        let mut jobs = Vec::new();
+        for (candidate, dirty, path, expected, text, bom) in [
+            (
+                Side::Left,
+                self.left_dirty,
+                &self.left_path,
+                &self.left_saved,
+                self.left.read(cx).value(),
+                self.left_bom,
+            ),
+            (
+                Side::Right,
+                self.right_dirty,
+                &self.right_path,
+                &self.right_saved,
+                self.right.read(cx).value(),
+                self.right_bom,
+            ),
+        ] {
+            if !dirty || (side != Side::Both && side != candidate) {
+                continue;
+            }
+            let Some(path) = path.clone() else {
+                self.status = "Open a file on the modified side to enable saving. Demo changes stay in memory.".into();
+                cx.notify();
+                return;
+            };
+            jobs.push((candidate, path, expected.clone(), text.to_string(), bom));
+        }
+        if jobs.is_empty() {
+            if close && !self.left_dirty && !self.right_dirty {
+                window.remove_window();
+            }
+            return;
+        }
+        self.saving = true;
+        self.status = "Saving modified files…".into();
+        // Each file is replaced atomically. Keep successful saves and failures
+        // separate so a failed second save never clears its dirty state.
+        let task = cx.background_executor().spawn(async move {
+            jobs.into_iter()
+                .map(|(side, path, expected, text, bom)| {
+                    let result = diff::save_file(&path, &expected, &text, bom);
+                    (side, path, text, result)
+                })
+                .collect::<Vec<_>>()
+        });
+        cx.spawn_in(window, async move |this, cx| {
+            let results = task.await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                this.saving = false;
+                let mut messages = Vec::new();
+                for (side, path, saved, result) in results {
+                    match result {
+                        Ok(()) => {
+                            if side == Side::Left {
+                                this.left_saved = saved;
+                                this.left_dirty =
+                                    this.left.read(cx).value().as_ref() != this.left_saved;
+                            } else {
+                                this.right_saved = saved;
+                                this.right_dirty =
+                                    this.right.read(cx).value().as_ref() != this.right_saved;
+                            }
+                            messages.push(format!("Saved {}", path.display()));
+                        }
+                        Err(error) => {
+                            messages.push(format!("Save failed for {}: {error}", path.display()))
+                        }
+                    }
+                }
+                this.status = messages.join(" · ");
+                if close && !this.left_dirty && !this.right_dirty {
+                    window.remove_window();
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+        cx.notify();
+    }
+
+    fn request_close(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        if self.saving || self.close_prompt {
+            return false;
+        }
+        if !self.right_dirty && !self.left_dirty {
+            return true;
+        }
+        self.close_prompt = true;
+        let can_save = (!self.left_dirty || self.left_path.is_some())
+            && (!self.right_dirty || self.right_path.is_some());
+        let answers = if can_save {
+            vec!["Save", "Discard", "Cancel"]
+        } else {
+            vec!["Discard", "Cancel"]
+        };
+        let prompt = window.prompt(
+            PromptLevel::Warning,
+            "Save changes to the modified files?",
+            Some("Changes on either side will be lost if discarded."),
+            &answers,
+            cx,
+        );
+        cx.spawn_in(window, async move |this, cx| {
+            let answer = prompt.await.ok();
+            let _ = this.update_in(cx, |this, window, cx| {
+                this.close_prompt = false;
+                if can_save && answer == Some(0) {
+                    this.save_files(Side::Both, true, window, cx);
+                } else if answer == Some(usize::from(can_save)) {
+                    window.remove_window();
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+        false
+    }
+
+    fn copy_patch(&mut self, cx: &mut Context<Self>) {
+        let left = self.left.read(cx).value().to_string();
+        let right = self.right.read(cx).value().to_string();
+        if left.len().max(right.len()) > diff::MAX_BYTES {
+            return;
+        }
+        let patch = diff::unified_patch(&left, &right, &self.left_name, &self.right_name);
+        if patch.is_empty() {
+            self.status = "The files are identical; there is no patch to copy.".into();
+        } else {
+            cx.write_to_clipboard(ClipboardItem::new_string(patch));
+            self.status = "Unified patch copied · Uses exact source text, including whitespace and line endings".into();
+        }
+        cx.notify();
+    }
+
+    fn file_header(&self, side: Side, cx: &mut Context<Self>) -> impl IntoElement {
+        let text = if side == Side::Left {
+            self.left.read(cx).value()
+        } else {
+            self.right.read(cx).value()
+        };
+        let (title, name, color) = if side == Side::Left {
+            ("ORIGINAL", &self.left_name, RED)
+        } else {
+            ("MODIFIED", &self.right_name, GREEN)
+        };
+        div()
+            .flex()
+            .flex_1()
+            .min_w_0()
+            .items_center()
+            .gap_3()
+            .px_4()
+            .h(px(34.))
+            .child(div().text_xs().text_color(rgb(color)).child(title))
+            .child(div().flex_1().min_w_0().text_sm().truncate().child(
+                if (side == Side::Right && self.right_dirty)
+                    || (side == Side::Left && self.left_dirty)
+                {
+                    format!("{name}  • modified")
+                } else {
+                    name.clone()
+                },
+            ))
+            .child(
+                Button::new(if side == Side::Left {
+                    "open-left"
+                } else {
+                    "open-right"
+                })
+                .small()
+                .ghost()
+                .label("Open file")
+                .disabled(
+                    self.busy
+                        || self.saving
+                        || (side == Side::Right && self.right_dirty)
+                        || (side == Side::Left && self.left_dirty),
+                )
+                .on_click(cx.listener(move |this, _, window, cx| this.open_file(side, window, cx))),
+            )
+            .child(surface::line_ending_badge(&text))
+    }
+
+    fn sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let hunks = self.comparison.hunks.clone();
+        div().flex().flex_col().w(px(208.)).flex_shrink_0().bg(rgb(PANEL))
+            .border_r_1().border_color(rgb(BORDER)).p_4().gap_3()
+            .child(div().text_xs().text_color(rgb(MUTED)).child("COMPARISON"))
+            .child(div().text_lg().font_weight(FontWeight::SEMIBOLD).child("Changes"))
+            .child(div().flex().gap_3().text_sm()
+                .child(div().text_color(rgb(GREEN)).child(format!("+{} additions", self.comparison.added)))
+                .child(div().text_color(rgb(RED)).child(format!("−{}", self.comparison.removed))))
+            .child(div().h(px(1.)).bg(rgb(BORDER)))
+            .child(div().text_xs().text_color(rgb(MUTED)).child(format!("{} CHANGE GROUPS", hunks.len())))
+            .child(div().id("change-list").flex_1().min_h_0().overflow_y_scroll()
+                .children(hunks.iter().enumerate().map(|(index, &source)| {
+                    let row = &self.comparison.rows[source];
+                    let line = row.right.as_ref().or(row.left.as_ref()).map_or(1, |line| line.number);
+                    Button::new(("change", index)).w_full().mb_2().small().ghost()
+                        .selected(self.selected == Some(index)).disabled(self.busy || self.saving)
+                        .label(format!("{:02}    Line {line}", index + 1))
+                        .on_click(cx.listener(move |this, _, _, cx| this.select_change(index, cx)))
+                })))
+            .child(div().text_xs().text_color(rgb(MUTED)).line_height(relative(1.7))
+                .child("F7  Next change\nShift+F7  Previous\nCtrl+E  Focus right\nCtrl+Enter  Compare"))
+            .child(div().text_xs().text_color(rgb(GREEN)).child("●  LOCAL FILES ONLY"))
+    }
+
+    fn comparison_view(&self, window: &Window, cx: &Context<Self>) -> AnyElement {
+        if self.comparison.rows.is_empty() {
+            return div()
+                .size_full()
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_color(rgb(MUTED))
+                .child("No text · Open files or press Ctrl+E to enter text")
+                .into_any_element();
+        }
+        let comparison = self.comparison.clone();
+        let rows = self.display_rows.clone();
+        let unified = self.unified;
+        let selected_source = self.selected.map(|index| self.comparison.hunks[index]);
+        let viewport_width = (f32::from(window.viewport_size().width)
+            - if self.show_changes { 210. } else { 2. })
+        .max(500.);
+        let column_width = if unified {
+            viewport_width
+        } else {
+            (viewport_width - 44.) / 2.
+        };
+        let content_width = self
+            .comparison
+            .rows
+            .iter()
+            .flat_map(|row| [&row.left, &row.right])
+            .filter_map(|line| line.as_ref())
+            .map(|line| line.text.len() + line.text.matches('\t').count() * 3)
+            .max()
+            .unwrap_or(0) as f32
+            * 8.
+            + 200.;
+        let max_scroll = (content_width - (column_width - 75.)).max(0.);
+        let horizontal = self.horizontal.map(|offset| offset.min(max_scroll));
+        let disabled = self.busy || self.saving;
+        let view = cx.entity().downgrade();
+        let highlight = self.highlight;
+        uniform_list("diff-lines", rows.len(), move |range, _, _| {
+            range
+                .map(|index| {
+                    let display = rows[index];
+                    let row = &comparison.rows[display.source];
+                    let active = selected_source.is_some_and(|start| {
+                        let end = comparison
+                            .hunks
+                            .iter()
+                            .copied()
+                            .find(|&next| next > start)
+                            .unwrap_or(comparison.rows.len());
+                        row.changed && display.source >= start && display.source < end
+                    });
+                    let cell = |line, spans: &[Range<usize>], sign, color, side: usize| {
+                        let view = view.clone();
+                        code_cell(
+                            line,
+                            spans,
+                            CellStyle {
+                                changed: row.changed && highlight != diff::HighlightMode::None,
+                                sign,
+                                color,
+                                active,
+                                width: column_width,
+                                content_width,
+                                offset: horizontal[side],
+                            },
+                        )
+                        .on_scroll_wheel(move |event, _, cx| {
+                            let delta = event.delta.pixel_delta(px(26.));
+                            let amount = if event.modifiers.shift && delta.x == px(0.) {
+                                -f32::from(delta.y)
+                            } else {
+                                -f32::from(delta.x)
+                            };
+                            if amount.abs() > 0.1 {
+                                let _ = view.update(cx, |this, cx| {
+                                    this.horizontal[side] =
+                                        (horizontal[side] + amount).clamp(0., max_scroll);
+                                    cx.notify();
+                                });
+                                cx.stop_propagation();
+                            }
+                        })
+                    };
+                    let mut element = div()
+                        .flex()
+                        .h(px(26.))
+                        .min_h(px(26.))
+                        .w(px(viewport_width))
+                        .font_family("Cascadia Mono")
+                        .text_size(px(13.))
+                        .line_height(px(26.));
+                    if unified {
+                        let inline = match (highlight, &row.left, &row.right) {
+                            (diff::HighlightMode::Words, Some(left), Some(right))
+                                if row.changed =>
+                            {
+                                diff::inline_changes(&left.text, &right.text, highlight)
+                            }
+                            (diff::HighlightMode::Characters, _, _) => {
+                                [row.left_spans.clone(), row.right_spans.clone()]
+                            }
+                            _ => [Vec::new(), Vec::new()],
+                        };
+                        let (line, spans, sign, color) = match display.side {
+                            Side::Left => (row.left.as_ref(), inline[0].as_slice(), "−", RED),
+                            Side::Right => (row.right.as_ref(), inline[1].as_slice(), "+", GREEN),
+                            Side::Both => {
+                                (row.right.as_ref().or(row.left.as_ref()), &[][..], " ", TEXT)
+                            }
+                        };
+                        element = element.child(cell(line, spans, sign, color, 0));
+                    } else {
+                        let mut gutter = div()
+                            .w(px(44.))
+                            .h_full()
+                            .flex_shrink_0()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .bg(rgb(if active {
+                                0x2b4058
+                            } else if row.changed {
+                                0x1d2a3a
+                            } else {
+                                PANEL
+                            }))
+                            .border_r_1()
+                            .border_color(rgb(BORDER));
+                        if let Ok(hunk) = comparison.hunks.binary_search(&display.source) {
+                            let view = view.clone();
+                            gutter = gutter.child(
+                                Button::new(("apply-right", hunk))
+                                    .xsmall()
+                                    .ghost()
+                                    .w(px(38.))
+                                    .h(px(24.))
+                                    .label(">>")
+                                    .disabled(disabled)
+                                    .tooltip("Apply this change from left to right")
+                                    .on_click(move |_, window, cx| {
+                                        let _ = view.update(cx, |this, cx| {
+                                            this.apply_right(hunk, window, cx)
+                                        });
+                                    }),
+                            );
+                        }
+                        element = element
+                            .child(cell(row.left.as_ref(), &row.left_spans, "−", RED, 0))
+                            .child(gutter)
+                            .child(cell(row.right.as_ref(), &row.right_spans, "+", GREEN, 1));
+                    }
+                    element
+                })
+                .collect::<Vec<_>>()
+        })
+        .track_scroll(&self.scroll)
+        .size_full()
+        .into_any_element()
+    }
+}
+
+struct CellStyle {
+    changed: bool,
+    sign: &'static str,
+    color: u32,
+    active: bool,
+    width: f32,
+    content_width: f32,
+    offset: f32,
+}
+
+fn code_cell(line: Option<&Line>, spans: &[Range<usize>], style: CellStyle) -> Div {
+    let CellStyle {
+        changed,
+        sign,
+        color,
+        active,
+        width,
+        content_width,
+        offset,
+    } = style;
+    let has_change = changed && line.is_some();
+    let background = if has_change {
+        if color == RED {
+            if active { 0x42272f } else { 0x2d2027 }
+        } else if active {
+            0x1c3c31
+        } else {
+            0x192d26
+        }
+    } else if changed {
+        0x131820
+    } else {
+        BG
+    };
+    let mut text = String::new();
+    let mut highlights = Vec::new();
+    if let Some(line) = line {
+        let mut positions = vec![0; line.text.len() + 1];
+        for (index, ch) in line.text.char_indices() {
+            positions[index] = text.len();
+            if ch == '\t' {
+                text.push_str("    ");
+            } else {
+                text.push(ch);
+            }
+        }
+        positions[line.text.len()] = text.len();
+        highlights = spans
+            .iter()
+            .filter(|range| !range.is_empty())
+            .map(|range| {
+                (
+                    positions[range.start]..positions[range.end],
+                    HighlightStyle {
+                        background_color: Some(
+                            rgb(if color == RED { 0x75404e } else { 0x32674f }).into(),
+                        ),
+                        color: Some(rgb(0xffffff).into()),
+                        ..Default::default()
+                    },
+                )
+            })
+            .collect();
+        if !line.terminated {
+            text.push_str("  ⏎ no newline");
+        }
+    }
+    div()
+        .flex()
+        .w(px(width))
+        .flex_shrink_0()
+        .h_full()
+        .bg(rgb(background))
+        .border_r_1()
+        .border_color(rgb(BORDER))
+        .child(
+            div()
+                .w(px(3.))
+                .flex_shrink_0()
+                .h_full()
+                .bg(rgb(if active && has_change {
+                    color
+                } else {
+                    background
+                })),
+        )
+        .child(
+            div()
+                .w(px(50.))
+                .flex_shrink_0()
+                .pr_2()
+                .text_right()
+                .text_color(rgb(MUTED))
+                .child(line.map(|line| line.number.to_string()).unwrap_or_default()),
+        )
+        .child(
+            div()
+                .w(px(22.))
+                .flex_shrink_0()
+                .text_color(rgb(color))
+                .child(if has_change { sign } else { " " }),
+        )
+        .child(
+            div().flex_1().min_w_0().h_full().overflow_hidden().child(
+                div()
+                    .relative()
+                    .left(px(-offset))
+                    .w(px(content_width))
+                    .text_color(rgb(if has_change { color } else { TEXT }))
+                    .whitespace_nowrap()
+                    .child(StyledText::new(text).with_highlights(highlights)),
+            ),
+        )
+}
+
+impl Render for DiffApp {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let disabled = self.busy || self.saving;
+        self.surface
+            .update(cx, |surface, _| surface.disabled = self.saving);
+        let body = if self.unified {
+            self.comparison_view(window, cx)
+        } else {
+            self.surface.clone().into_any_element()
+        };
+        let sync = self.surface.read(cx).sync_scroll;
+        let curved = self.surface.read(cx).curved;
+        let collapsed = self.surface.read(cx).collapse_unchanged;
+        div()
+            .key_context("Rdiff")
+            .track_focus(&self.focus)
+            .flex()
+            .flex_col()
+            .size_full()
+            .bg(rgb(BG))
+            .text_color(rgb(TEXT))
+            .font_family("Segoe UI")
+            .child(
+                div()
+                    .h(px(38.))
+                    .flex_shrink_0()
+                    .px_2()
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .bg(rgb(PANEL))
+                    .border_b_1()
+                    .border_color(rgb(BORDER))
+                    .child(
+                        Button::new("previous")
+                            .small()
+                            .ghost()
+                            .label("↑")
+                            .tooltip("Previous difference · Alt+Up / Shift+F7")
+                            .disabled(disabled)
+                            .on_click(cx.listener(|this, _, _, cx| this.navigate(false, cx))),
+                    )
+                    .child(
+                        Button::new("next")
+                            .small()
+                            .ghost()
+                            .label("↓")
+                            .tooltip("Next difference · Alt+Down / F7")
+                            .disabled(disabled)
+                            .on_click(cx.listener(|this, _, _, cx| this.navigate(true, cx))),
+                    )
+                    .child(
+                        Button::new("undo-right")
+                            .small()
+                            .ghost()
+                            .label("↶")
+                            .tooltip("Undo · Ctrl+Z")
+                            .disabled(disabled || self.undo.is_empty())
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.undo_right(window, cx)),
+                            ),
+                    )
+                    .child(
+                        Button::new("redo-right")
+                            .small()
+                            .ghost()
+                            .label("↷")
+                            .tooltip("Redo · Ctrl+Shift+Z")
+                            .disabled(disabled || self.redo.is_empty())
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.redo_right(window, cx)),
+                            ),
+                    )
+                    .child(div().w(px(1.)).h(px(20.)).mx_1().bg(rgb(BORDER)))
+                    .child(
+                        Button::new("highlight")
+                            .small()
+                            .ghost()
+                            .label(self.highlight.label())
+                            .tooltip("Highlighting: Words / Characters / Lines / None")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.highlight = this.highlight.next();
+                                this.update_surface(cx);
+                                cx.notify();
+                            })),
+                    )
+                    .child(
+                        Button::new("whitespace")
+                            .small()
+                            .ghost()
+                            .label(self.whitespace.label())
+                            .tooltip("Whitespace comparison policy")
+                            .disabled(self.saving)
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.whitespace = this.whitespace.next();
+                                this.compare(cx);
+                            })),
+                    )
+                    .child(
+                        Button::new("sync")
+                            .small()
+                            .ghost()
+                            .w(px(30.))
+                            .child(surface::toolbar_icon(false))
+                            .tooltip(if sync {
+                                "Sync scroll: On"
+                            } else {
+                                "Sync scroll: Off"
+                            })
+                            .selected(sync)
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.surface.update(cx, |s, cx| {
+                                    s.sync_scroll = !s.sync_scroll;
+                                    cx.notify();
+                                });
+                                cx.notify();
+                            })),
+                    )
+                    .child(
+                        Button::new("collapse-unchanged")
+                            .small()
+                            .ghost()
+                            .w(px(30.))
+                            .child(surface::toolbar_icon(true))
+                            .selected(collapsed && !self.unified)
+                            .disabled(self.unified || self.busy || self.saving)
+                            .tooltip(if collapsed {
+                                "Collapse unchanged: On · Click to expand all"
+                            } else {
+                                "Collapse unchanged: Off · Click to collapse"
+                            })
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.surface
+                                    .update(cx, |surface, cx| surface.toggle_unchanged(cx));
+                                cx.notify();
+                            })),
+                    )
+                    .child(
+                        Button::new("shape")
+                            .small()
+                            .ghost()
+                            .label(if curved { "Curved" } else { "Straight" })
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.surface.update(cx, |s, cx| {
+                                    s.curved = !s.curved;
+                                    cx.notify();
+                                });
+                                cx.notify();
+                            })),
+                    )
+                    .child(div().flex_1())
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(rgb(MUTED))
+                            .child(format!("{} differences", self.comparison.hunks.len())),
+                    )
+                    .child(
+                        Button::new("split")
+                            .small()
+                            .ghost()
+                            .label("Side by side")
+                            .selected(!self.unified)
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.unified = false;
+                                this.rebuild_rows();
+                                this.update_surface(cx);
+                                cx.notify();
+                            })),
+                    )
+                    .child(
+                        Button::new("unified")
+                            .small()
+                            .ghost()
+                            .label("Unified")
+                            .selected(self.unified)
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.unified = true;
+                                this.rebuild_rows();
+                                cx.notify();
+                            })),
+                    )
+                    .child(
+                        Button::new("changes")
+                            .small()
+                            .ghost()
+                            .label("Changes")
+                            .selected(self.show_changes)
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.show_changes = !this.show_changes;
+                                cx.notify();
+                            })),
+                    ),
+            )
+            .child(
+                div()
+                    .h(px(32.))
+                    .flex_shrink_0()
+                    .px_2()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .border_b_1()
+                    .border_color(rgb(BORDER))
+                    .child(
+                        Button::new("apply-selected-left")
+                            .xsmall()
+                            .ghost()
+                            .label("<< Apply")
+                            .tooltip("Apply selected change to the left · Alt+Left")
+                            .disabled(disabled || self.selected.is_none())
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.apply_selected(true, window, cx)
+                            })),
+                    )
+                    .child(
+                        Button::new("apply-selected")
+                            .xsmall()
+                            .ghost()
+                            .label("Apply >>")
+                            .tooltip("Apply selected change to the right · Alt+Right")
+                            .disabled(disabled || self.selected.is_none())
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                if let Some(i) = this.selected {
+                                    this.apply_right(i, window, cx);
+                                }
+                            })),
+                    )
+                    .child(
+                        Button::new("swap")
+                            .xsmall()
+                            .ghost()
+                            .label("Swap")
+                            .disabled(disabled || self.right_dirty || self.left_dirty)
+                            .on_click(cx.listener(|this, _, window, cx| this.swap(window, cx))),
+                    )
+                    .child(
+                        Button::new("copy")
+                            .xsmall()
+                            .ghost()
+                            .label("Copy patch")
+                            .disabled(disabled)
+                            .on_click(cx.listener(|this, _, _, cx| this.copy_patch(cx))),
+                    )
+                    .child(
+                        Button::new("revert-right")
+                            .xsmall()
+                            .ghost()
+                            .label("Revert right")
+                            .disabled(disabled || !self.right_dirty)
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.revert_right(window, cx)),
+                            ),
+                    )
+                    .child(div().flex_1())
+                    .child(
+                        Button::new("save-left")
+                            .xsmall()
+                            .label("Save left")
+                            .disabled(disabled || !self.left_dirty || self.left_path.is_none())
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.save_files(Side::Left, false, window, cx)
+                            })),
+                    )
+                    .child(
+                        Button::new("save-right")
+                            .xsmall()
+                            .label("Save right")
+                            .disabled(disabled || !self.right_dirty || self.right_path.is_none())
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.save_files(Side::Right, false, window, cx)
+                            })),
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_1()
+                    .min_h_0()
+                    .when(self.show_changes, |row| row.child(self.sidebar(cx)))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .flex_1()
+                            .min_w_0()
+                            .min_h_0()
+                            .child(
+                                div()
+                                    .flex()
+                                    .h(px(34.))
+                                    .flex_shrink_0()
+                                    .border_b_1()
+                                    .border_color(rgb(BORDER))
+                                    .child(self.file_header(Side::Left, cx))
+                                    .child(
+                                        div()
+                                            .w(self.surface.read(cx).gutter_width(cx))
+                                            .flex_shrink_0(),
+                                    )
+                                    .child(self.file_header(Side::Right, cx)),
+                            )
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_h_0()
+                                    .min_w_0()
+                                    .overflow_hidden()
+                                    .child(body),
+                            ),
+                    ),
+            )
+            .child(
+                div()
+                    .h(px(26.))
+                    .flex_shrink_0()
+                    .px_3()
+                    .flex()
+                    .items_center()
+                    .gap_3()
+                    .bg(rgb(PANEL))
+                    .border_t_1()
+                    .border_color(rgb(BORDER))
+                    .text_xs()
+                    .child(
+                        div()
+                            .text_color(rgb(if self.right_dirty || self.left_dirty {
+                                0xd9bc7c
+                            } else {
+                                MUTED
+                            }))
+                            .child(if self.saving {
+                                "Saving…"
+                            } else if self.busy {
+                                "Comparing…"
+                            } else if self.right_dirty || self.left_dirty {
+                                "Modified"
+                            } else {
+                                "Ready"
+                            }),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            .text_color(rgb(MUTED))
+                            .child(self.status.clone()),
+                    )
+                    .child(self.updater.clone())
+                    .child("UTF-8"),
+            )
+    }
+}
+pub fn run(paths: Vec<PathBuf>) {
+    application().with_assets(assets::Assets).run(move |cx| {
+        init(cx);
+        Theme::change(ThemeMode::Dark, None, cx);
+        surface::configure_theme(cx);
+        let bounds = Bounds::centered(None, size(px(1360.), px(860.)), cx);
+        let (_, view) = open_window(
+            WindowOptions {
+                window_bounds: Some(WindowBounds::Windowed(bounds)),
+                window_min_size: Some(size(px(1040.), px(640.))),
+                titlebar: Some(TitlebarOptions {
+                    title: Some("rdiff — Text comparison".into()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            cx,
+            |window, cx| {
+                let view = cx.new(|cx| DiffApp::new(&paths, window, cx));
+                let weak = view.downgrade();
+                window.on_window_should_close(cx, move |window, cx| {
+                    weak.update(cx, |this, cx| this.request_close(window, cx))
+                        .unwrap_or(true)
+                });
+                view
+            },
+        )
+        .expect("Failed to open rdiff window");
+        // Editor key bindings handle Ctrl+Enter themselves, before element
+        // key-down callbacks. Intercept application commands before dispatch
+        // so Compare cannot accidentally insert a newline into either buffer.
+        let view = view.downgrade();
+        cx.intercept_keystrokes(move |event, window, cx| {
+            let key = &event.keystroke;
+            if key.modifiers.platform {
+                return;
+            }
+            let command = if key.modifiers.alt {
+                if key.modifiers.control || key.modifiers.shift {
+                    return;
+                }
+                match key.key.as_str() {
+                    "down" => 2,
+                    "up" => 3,
+                    "left" => 7,
+                    "right" => 8,
+                    _ => return,
+                }
+            } else {
+                match (key.key.as_str(), key.modifiers.control, key.modifiers.shift) {
+                    ("enter", true, false) => 0,
+                    ("e", true, false) => 1,
+                    ("f7", false, false) => 2,
+                    ("f7", false, true) => 3,
+                    ("z", true, false) => 4,
+                    ("s", true, false) => 5,
+                    ("z", true, true) | ("y", true, false) => 6,
+                    _ => return,
+                }
+            };
+            cx.stop_propagation();
+            let _ = view.update(cx, |this, cx| {
+                if this.close_prompt {
+                    return;
+                }
+                match command {
+                    0 => {
+                        window.focus(&this.focus, cx);
+                        this.compare(cx);
+                    }
+                    1 => {
+                        this.unified = false;
+                        this.right.update(cx, |state, cx| state.focus(window, cx));
+                        cx.notify();
+                    }
+                    2 => this.navigate(true, cx),
+                    3 => this.navigate(false, cx),
+                    4 => this.undo_right(window, cx),
+                    5 => this.save_files(Side::Both, false, window, cx),
+                    6 => this.redo_right(window, cx),
+                    7 => this.apply_selected(true, window, cx),
+                    _ => this.apply_selected(false, window, cx),
+                }
+            });
+        })
+        .detach();
+        cx.on_window_closed(|cx, _| {
+            if cx.windows().is_empty() {
+                cx.quit();
+            }
+        })
+        .detach();
+        cx.activate(true);
+    });
+}

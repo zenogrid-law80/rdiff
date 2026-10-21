@@ -1,0 +1,8 @@
+title=rdiff
+theme=dark
+context=3
+spacing=compact
+language=en
+wrap=false
+font=mono
+status=ready

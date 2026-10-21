@@ -1,0 +1,33 @@
+name: Windows release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    env:
+      CARGO_INCREMENTAL: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate release version
+        shell: pwsh
+        run: |
+          $package = (cargo metadata --no-deps --format-version 1 | ConvertFrom-Json).packages | Where-Object name -eq 'rdiff'
+          if ($env:GITHUB_REF_NAME -cne "v$($package.version)") { throw 'Tag must match Cargo.toml version' }
+          if ($package.version -notmatch '^\d+\.\d+\.\d+$') { throw 'Stable releases only' }
+      - name: Test
+        run: cargo test --locked
+      - name: Build
+        run: cargo build --release --locked --target x86_64-pc-windows-msvc
+      - name: Publish executable
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          Copy-Item target/x86_64-pc-windows-msvc/release/rdiff.exe rdiff-windows-x86_64.exe
+          gh release create $env:GITHUB_REF_NAME rdiff-windows-x86_64.exe --verify-tag --generate-notes --title "rdiff $env:GITHUB_REF_NAME"
+          if ($LASTEXITCODE -ne 0) { throw 'Release creation failed' }

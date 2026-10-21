@@ -1,0 +1,8 @@
+title=rdiff
+theme=dim
+context=3
+spacing=compact
+language=en
+wrap=auto
+font=mono
+status=reviewed

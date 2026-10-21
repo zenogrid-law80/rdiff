@@ -1,0 +1,6 @@
+target/
+.idea/
+Cargo.lock
+.codegraph/
+docs/rustrover-diff-analysis.txt
+.run/

@@ -1,0 +1,26 @@
+[package]
+name = "rdiff"
+version = "0.1.1"
+edition = "2024"
+autoexamples = false
+description = "A native side-by-side text diff tool built with GPUI Kit"
+license = "MIT"
+
+[dependencies]
+gpui-kit = { version = "=0.8.0", features = ["tree-sitter-rust", "tree-sitter-toml", "tree-sitter-markdown", "tree-sitter-markdown-inline"] }
+similar = { version = "=3.2.0", features = ["unicode"] }
+tempfile = "3.27"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+semver = "1"
+sha2 = "0.10"
+
+[patch.crates-io]
+# 0.8.0 plus a small external-fold API; see vendor/gpui-base/RDIFF-PATCH.md.
+gpui-base = { path = "vendor/gpui-base" }
+
+[profile.dev]
+debug = 0
+
+[profile.dev.package."*"]
+debug = 0
