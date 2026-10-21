@@ -12,6 +12,7 @@ pub struct UpdateControl {
     busy: bool,
     installed: bool,
     failed: bool,
+    queued: bool,
     message: String,
 }
 
@@ -22,6 +23,7 @@ impl UpdateControl {
             busy: false,
             installed: false,
             failed: false,
+            queued: false,
             message: format!(
                 "rdiff v{} · Check GitHub Releases for updates",
                 update::VERSION
@@ -62,6 +64,7 @@ impl UpdateControl {
                 this.busy = false;
                 match result {
                     Ok((available, message)) => {
+                        this.queued = message.starts_with("MSI update queued");
                         this.available = available;
                         this.message = message;
                         this.installed = installing;
@@ -88,7 +91,11 @@ impl Render for UpdateControl {
             } else if self.failed {
                 "Update failed · Retry".into()
             } else if self.installed {
-                "Updated · Next launch".into()
+                if self.queued {
+                    "Update ready · Close rdiff".into()
+                } else {
+                    "Updated · Next launch".into()
+                }
             } else if let Some(release) = &self.available {
                 format!("Install v{}", release.version)
             } else {

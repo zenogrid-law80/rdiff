@@ -30,9 +30,95 @@ struct Asset {
 pub struct Available {
     pub version: Version,
     asset: Asset,
+    msi: bool,
 }
 
+#[cfg(test)]
 fn select(json: &[u8], current: &str) -> Result<Option<Available>, String> {
+    select_kind(json, current, false)
+}
+
+#[cfg(windows)]
+fn powershell() -> Result<std::process::Command, String> {
+    use std::os::windows::process::CommandExt;
+    let system = std::env::var_os("SystemRoot").ok_or("SystemRoot is missing.")?;
+    let mut command = std::process::Command::new(
+        Path::new(&system).join("System32/WindowsPowerShell/v1.0/powershell.exe"),
+    );
+    command
+        .args(["-NoLogo", "-NoProfile", "-NonInteractive"])
+        .creation_flags(0x08000000);
+    Ok(command)
+}
+
+#[cfg(windows)]
+fn msi_installation() -> Result<bool, String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let output = powershell()?.args(["-Command", r#"
+$ErrorActionPreference = 'Stop'
+foreach ($view in @([Microsoft.Win32.RegistryView]::Registry64, [Microsoft.Win32.RegistryView]::Registry32)) {
+    $root = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::CurrentUser, $view)
+    $key = $root.OpenSubKey('Software\zenogrid-law80\rdiff')
+    if ($null -ne $key) {
+        $dir = $key.GetValue('InstallDirectory')
+        $key.Dispose()
+        if ($dir -and ([IO.Path]::GetFullPath((Join-Path $dir 'rdiff.exe')) -eq $env:RDIFF_EXE)) { $root.Dispose(); exit 10 }
+    }
+    $root.Dispose()
+}
+exit 0
+"#]).env("RDIFF_EXE", exe).output().map_err(|e| e.to_string())?;
+    match output.status.code() {
+        Some(10) => Ok(true),
+        Some(0) => Ok(false),
+        _ => Err("Could not determine Windows Installer installation state.".into()),
+    }
+}
+
+#[cfg(not(windows))]
+fn msi_installation() -> Result<bool, String> {
+    Ok(false)
+}
+
+#[cfg(windows)]
+fn schedule_msi(release: &Available) -> Result<String, String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let stage = tempfile::Builder::new()
+        .prefix("rdiff-msi-update-")
+        .tempdir()
+        .map_err(|e| e.to_string())?;
+    let package = stage.path().join("update.msi");
+    fetch(&release.asset.browser_download_url, &package)?;
+    verify(&package, &release.asset)?;
+    let script = stage.path().join("install.ps1");
+    fs::write(&script, include_str!("../installer/update.ps1")).map_err(|e| e.to_string())?;
+    let directory = stage.keep();
+    powershell()?
+        .args(["-ExecutionPolicy", "Bypass", "-File"])
+        .arg(script)
+        .env("RDIFF_EXE", exe)
+        .env("RDIFF_PARENT_PID", std::process::id().to_string())
+        .env("RDIFF_MSI", package)
+        .env("RDIFF_MSI_SHA256", digest(&release.asset)?)
+        .env("RDIFF_UPDATE_VERSION", release.version.to_string())
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|e| format!("Cannot start MSI updater: {e}"))?;
+    Ok(format!(
+        "MSI update queued for v{}. Save your work and close all rdiff windows. Windows Installed apps will update after installation. Status: {}",
+        release.version,
+        directory.join("status.txt").display()
+    ))
+}
+
+#[cfg(not(windows))]
+fn schedule_msi(_: &Available) -> Result<String, String> {
+    Err("MSI updates require Windows.".into())
+}
+
+fn select_kind(json: &[u8], current: &str, msi: bool) -> Result<Option<Available>, String> {
     let release: Release = serde_json::from_slice(json).map_err(|e| e.to_string())?;
     let version = Version::parse(
         release
@@ -47,19 +133,28 @@ fn select(json: &[u8], current: &str) -> Result<Option<Available>, String> {
     if version <= Version::parse(current).map_err(|e| e.to_string())? {
         return Ok(None);
     }
-    let mut assets = release.assets.into_iter().filter(|a| a.name == ASSET);
+    let name = if msi {
+        format!("rdiff-{version}-windows-x86_64.msi")
+    } else {
+        ASSET.into()
+    };
+    let mut assets = release.assets.into_iter().filter(|a| a.name == name);
     let asset = assets
         .next()
         .ok_or("Windows x64 release asset is missing.")?;
     if assets.next().is_some() {
         return Err("Duplicate release assets.".into());
     }
-    let expected_url = format!("{PREFIX}{}/{ASSET}", release.tag_name);
+    let expected_url = format!("{PREFIX}{}/{}", release.tag_name, name);
     if asset.browser_download_url != expected_url || asset.size < 64 || asset.size > MAX_SIZE {
         return Err("Invalid release asset URL or size.".into());
     }
     digest(&asset)?;
-    Ok(Some(Available { version, asset }))
+    Ok(Some(Available {
+        version,
+        asset,
+        msi,
+    }))
 }
 
 fn digest(asset: &Asset) -> Result<&str, String> {
@@ -122,7 +217,7 @@ pub fn check() -> Result<Option<Available>, String> {
         .take(2 * 1024 * 1024)
         .read_to_end(&mut json)
         .map_err(|e| e.to_string())?;
-    select(&json, VERSION)
+    select_kind(&json, VERSION, msi_installation()?)
 }
 
 fn verify(path: &Path, asset: &Asset) -> Result<(), String> {
@@ -162,6 +257,9 @@ fn replace(staged: &Path, exe: &Path, backup: &Path) -> Result<(), String> {
 }
 
 pub fn install(release: &Available) -> Result<String, String> {
+    if release.msi {
+        return schedule_msi(release);
+    }
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let parent = exe.parent().ok_or("Executable directory is missing.")?;
     // OS lock is released even after a crash; keep the harmless lock file.
@@ -215,6 +313,20 @@ mod tests {
         )
         .unwrap()
     }
+    #[test]
+    fn msi_installation_requires_versioned_msi_asset() {
+        let hash = format!("sha256:{}", "a".repeat(64));
+        let exe_only = metadata("v0.2.0", &hash);
+        assert!(select_kind(&exe_only, "0.1.0", true).is_err());
+        let msi = String::from_utf8(exe_only)
+            .unwrap()
+            .replace(ASSET, "rdiff-0.2.0-windows-x86_64.msi");
+        let release = select_kind(msi.as_bytes(), "0.1.0", true).unwrap().unwrap();
+        assert!(release.msi);
+        assert_eq!(release.asset.name, "rdiff-0.2.0-windows-x86_64.msi");
+        assert!(select_kind(msi.as_bytes(), "0.1.0", false).is_err());
+    }
+
     #[test]
     fn versions_assets_and_digest_are_validated() {
         let hash = format!("sha256:{}", "a".repeat(64));

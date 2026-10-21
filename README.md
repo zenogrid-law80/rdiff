@@ -6,7 +6,9 @@ A native text comparison and three-way merge tool built with Rust, [GPUI Kit 0.8
 
 Download the Windows x64 `.msi` installer from [GitHub Releases](https://github.com/zenogrid-law80/rdiff/releases/latest). It installs for the current user at `%LOCALAPPDATA%\Programs\rdiff`, adds a Start menu shortcut, and can be removed through Windows **Installed apps**. Administrator access is not required. The standalone `.exe` is also available for portable use.
 
-The in-app updater replaces the executable only; Windows Installed apps retains the MSI package version until you install a newer MSI. Use the MSI when you want Windows Installer to manage the installed version. Backup folders created by self-update are retained when uninstalling.
+For MSI installations, self-update downloads and verifies the new MSI, then waits for all rdiff windows to close normally before running Windows Installer. Save your work and close rdiff when **Update ready · Close rdiff** appears. Windows Installed apps is updated to the new package version. The tooltip or CLI output provides a status-file path; its directory also contains the installation log. No editor process is forcibly closed and no automatic reboot is requested. Portable copies continue to update the executable directly. Backup folders from portable updates are retained when uninstalling.
+
+The original v0.1.1 updater only replaces the executable. Install the v0.1.2 MSI once to enable MSI-based updates for subsequent releases.
 
 For unattended installation, use `msiexec /i rdiff-0.1.1-windows-x86_64.msi /qn /norestart`.
 
