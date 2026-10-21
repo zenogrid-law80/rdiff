@@ -23,11 +23,20 @@ jobs:
         run: cargo test --locked
       - name: Build
         run: cargo build --release --locked --target x86_64-pc-windows-msvc
-      - name: Publish executable
+      - name: Build MSI installer
+        shell: pwsh
+        run: |
+          dotnet tool install wix --version 4.0.6 --tool-path target/wix-tools
+          if ($LASTEXITCODE -ne 0) { throw 'WiX installation failed' }
+          target/wix-tools/wix.exe extension add -g WixToolset.UI.wixext/4.0.6
+          if ($LASTEXITCODE -ne 0) { throw 'WiX UI extension installation failed' }
+          ./installer/build.ps1 -ExePath target/x86_64-pc-windows-msvc/release/rdiff.exe
+      - name: Publish executable and installer
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           Copy-Item target/x86_64-pc-windows-msvc/release/rdiff.exe rdiff-windows-x86_64.exe
-          gh release create $env:GITHUB_REF_NAME rdiff-windows-x86_64.exe --verify-tag --generate-notes --title "rdiff $env:GITHUB_REF_NAME"
+          $msi = (Get-ChildItem target/release-assets/*.msi).FullName
+          gh release create $env:GITHUB_REF_NAME rdiff-windows-x86_64.exe $msi --verify-tag --generate-notes --title "rdiff $env:GITHUB_REF_NAME"
           if ($LASTEXITCODE -ne 0) { throw 'Release creation failed' }

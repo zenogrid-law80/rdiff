@@ -4,6 +4,12 @@ A native text comparison and three-way merge tool built with Rust, [GPUI Kit 0.8
 
 ## Running
 
+Download the Windows x64 `.msi` installer from [GitHub Releases](https://github.com/zenogrid-law80/rdiff/releases/latest). It installs for the current user at `%LOCALAPPDATA%\Programs\rdiff`, adds a Start menu shortcut, and can be removed through Windows **Installed apps**. Administrator access is not required. The standalone `.exe` is also available for portable use.
+
+The in-app updater replaces the executable only; Windows Installed apps retains the MSI package version until you install a newer MSI. Use the MSI when you want Windows Installer to manage the installed version. Backup folders created by self-update are retained when uninstalling.
+
+For unattended installation, use `msiexec /i rdiff-0.1.1-windows-x86_64.msi /qn /norestart`.
+
 Building requires Rust stable and the Windows MSVC C++ build tools.
 
 ```powershell
@@ -118,3 +124,15 @@ cargo clippy --locked --bin rdiff -- -D warnings
 The interface and core comparison and merge behavior are inspired by RustRover diff. This is not a complete replica of JetBrains products. IDE VCS integration, folder and binary comparison, language-aware semantic analysis, and formatting-aware comparison are not supported.
 
 MIT License.
+
+## Building the MSI
+
+After building the release executable, install the pinned WiX tool and UI extension, then run the packaging script:
+
+```powershell
+dotnet tool install wix --version 4.0.6 --tool-path target/wix-tools
+target/wix-tools/wix.exe extension add -g WixToolset.UI.wixext/4.0.6
+./installer/build.ps1
+```
+
+The MSI is written to `target/release-assets/`. Tagged release builds publish both the portable executable and the MSI. The installer includes the project and vendored GPUI Base licenses.

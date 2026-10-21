@@ -1,0 +1,40 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+  <Package Name="rdiff" Manufacturer="zenogrid-law80" Version="$(var.Version)"
+           UpgradeCode="A7168F07-248D-4597-910C-13B5D6291F93" Language="1033" Scope="perUser">
+    <MajorUpgrade DowngradeErrorMessage="A newer version of rdiff is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+    <Property Id="ARPCOMMENTS" Value="Native text comparison and three-way merge" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/zenogrid-law80/rdiff" />
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="ProgramsFolder" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="rdiff">
+          <Component Id="Application" Guid="FDD8DCC7-44C8-40A8-B9B9-DBFB7A924E06">
+            <File Id="RdiffExe" Source="$(var.ExePath)" Name="rdiff.exe" />
+            <File Source="$(var.RepoRoot)\LICENSE" Name="LICENSE.txt" />
+            <File Source="$(var.RepoRoot)\vendor\gpui-base\LICENSE-APACHE" Name="LICENSE-gpui-base.txt" />
+            <RegistryValue Root="HKCU" Key="Software\zenogrid-law80\rdiff" Name="InstallDirectory"
+                           Type="string" Value="[INSTALLFOLDER]" KeyPath="yes" />
+            <RemoveFolder Id="RemoveInstallFolder" On="uninstall" />
+          </Component>
+        </Directory>
+      </Directory>
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="AppMenuFolder" Name="rdiff">
+        <Component Id="StartMenu" Guid="3CE13D84-71CB-41EB-8D3C-FE94F91F04A8">
+          <Shortcut Id="StartMenuShortcut" Name="rdiff" Target="[#RdiffExe]" WorkingDirectory="INSTALLFOLDER" />
+          <RegistryValue Root="HKCU" Key="Software\zenogrid-law80\rdiff" Name="StartMenu"
+                         Type="integer" Value="1" KeyPath="yes" />
+          <RemoveFolder Id="RemoveAppMenuFolder" On="uninstall" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+    <Feature Id="Main" Title="rdiff" Level="1">
+      <ComponentRef Id="Application" />
+      <ComponentRef Id="StartMenu" />
+    </Feature>
+    <ui:WixUI Id="WixUI_Minimal" />
+    <WixVariable Id="WixUILicenseRtf" Value="$(var.LicenseRtf)" />
+  </Package>
+</Wix>
