@@ -63,6 +63,7 @@ h1 { font-size: clamp(44px, 4.6vw, 67px); letter-spacing: -.065em; font-weight: 
 h1 > span { color: var(--accent); }
 .hero-intro { justify-self: end; padding-bottom: 3px; }
 .hero-intro > p:first-child { color: #b3bdb6; font-size: 15px; line-height: 1.85; margin-bottom: 25px; }
+.mac-download { display: flex; width: fit-content; margin-top: 10px; }
 .download-note { margin-top: 13px; color: var(--subtle); font-size: 10px; letter-spacing: .15px; }
 .download-note span, .download-options p span { padding-inline: 6px; }
 .product-demo { margin-top: 51px; border: 1px solid #3b453e; border-radius: 10px; background: var(--panel-dark); box-shadow: 0 20px 60px #0003; overflow: hidden; }
@@ -175,7 +176,7 @@ code { font-family: var(--mono); word-break: normal; }
 .terminal-note { display: flex; align-items: flex-start; gap: 11px; padding: 19px 23px; color: #94a78d; }
 .terminal-note > .icon { width: 14px; height: 14px; margin-top: 3px; }
 .terminal-note p { font-size: 10px; line-height: 1.9; }
-.terminal-note code { color: #b8c7ae; font-size: 10px; }
+.terminal-note code { overflow-wrap: anywhere; color: #b8c7ae; font-size: 10px; }
 .faq-section { padding-block: 80px; background: #131717; }
 .faq-layout { display: grid; grid-template-columns: .9fr 1.1fr; gap: 86px; }
 .faq-section .inline-link { margin-top: 28px; }

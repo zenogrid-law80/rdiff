@@ -27,7 +27,9 @@ The repository's Pages publishing source is **GitHub Actions**, with custom doma
 ## Content
 
 - Installer buttons open GitHub's latest release, where the versioned MSI can be selected.
-- The portable download uses the stable release asset name `rdiff-windows-x86_64.exe`.
+- The portable Windows download uses the stable release asset name `rdiff-windows-x86_64.exe`.
+- Both macOS buttons download `rdiff-macos-arm64.dmg` from the latest release. It supports macOS 11 or later on Apple Silicon; Intel Mac builds are not provided.
+- Mac installation, the app-bundle CLI/P4V path, lack of Apple notarization, and manual DMG updates are explained on the page.
 - The interactive diff and merge previews use fixed examples; they do not read or upload files.
 - Command examples and P4V argument ordering follow the repository's CLI and README.
 - The product and executable are `rdiff`; the Cargo package is `ridff-tools`.

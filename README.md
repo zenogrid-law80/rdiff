@@ -16,7 +16,15 @@ The original v0.1.1 updater only replaces the executable. Install the v0.1.3 MSI
 
 For unattended installation, use `msiexec /i rdiff-0.1.1-windows-x86_64.msi /qn /norestart`.
 
-Building requires Rust stable and the Windows MSVC C++ build tools.
+On Apple Silicon Macs running macOS 11 or later, download [rdiff-macos-arm64.dmg](https://github.com/zenogrid-law80/rdiff/releases/latest/download/rdiff-macos-arm64.dmg), open it, and drag **rdiff.app** to **Applications**. Intel Mac builds are not currently provided. The Mac build is ad-hoc signed and has not been notarized by Apple. If macOS blocks the first launch, review the app in **System Settings → Privacy & Security → Open Anyway**. Install Mac updates manually by replacing the app with the latest DMG; the built-in updater currently supports Windows x64 only.
+
+For macOS CLI and P4V integration, use `/Applications/rdiff.app/Contents/MacOS/rdiff` as the executable path. For example:
+
+```sh
+/Applications/rdiff.app/Contents/MacOS/rdiff diff examples/before.rs examples/after.rs
+```
+
+Building requires Rust stable and either the Windows MSVC C++ build tools or Xcode command-line tools on macOS.
 
 ```powershell
 cargo run --bin rdiff
@@ -37,7 +45,7 @@ rdiff self-update
 
 Self-update supports Windows x64 and requires write access to the installation directory. It downloads `rdiff-windows-x86_64.exe` and verifies its size and GitHub API SHA-256 digest before replacing the executable. If replacement fails, it attempts to restore the previous executable and reports any recovery failure. The backup is kept at `.rdiff-update-*/previous.exe` in the installation directory. You can delete that backup directory after closing all windows running the previous version. Network errors, API rate limits, and missing public releases are reported as errors. Downgrades and prereleases are not installed. Authentication for private repositories is not currently supported.
 
-To publish a release, update the version in `Cargo.toml` and push a matching `vX.Y.Z` tag. `.github/workflows/release.yml` tests and builds the application, then publishes the executable with the required asset name to GitHub Releases.
+To publish a release, update the version in `Cargo.toml` and push a matching `vX.Y.Z` tag. `.github/workflows/release.yml` tests and builds the application, then publishes the Windows executable, MSI, and Apple Silicon macOS DMG to GitHub Releases after both platform builds succeed.
 
 ## P4V external tool configuration
 
@@ -142,3 +150,15 @@ target/wix-tools/wix.exe extension add -g WixToolset.UI.wixext/4.0.6
 ```
 
 The MSI is written to `target/release-assets/`. Tagged release builds publish both the portable executable and the MSI. The installer includes the project and vendored GPUI Base licenses.
+
+## Building the macOS DMG
+
+On macOS with Xcode command-line tools and the `aarch64-apple-darwin` Rust target installed:
+
+```sh
+rustup target add aarch64-apple-darwin
+cargo test --release --locked --bin rdiff --target aarch64-apple-darwin
+bash installer/build-macos.sh
+```
+
+The script builds the release binary and packages `rdiff.app`, its icon and licenses, an Applications shortcut, and installation notes into `target/release-assets/rdiff-macos-arm64.dmg`. A SHA-256 checksum is written beside it. The bundle targets macOS 11 or later on Apple Silicon and is ad-hoc signed; Developer ID signing and Apple notarization are not configured. Tagged releases build and publish this DMG alongside the Windows assets.
