@@ -8,7 +8,7 @@ Download the Windows x64 `.msi` installer from [GitHub Releases](https://github.
 
 For MSI installations, self-update downloads and verifies the new MSI, then waits for all rdiff windows to close normally before running Windows Installer. Save your work and close rdiff when **Update ready · Close rdiff** appears. Windows Installed apps is updated to the new package version. The tooltip or CLI output provides a status-file path; its directory also contains the installation log. No editor process is forcibly closed and no automatic reboot is requested. Portable copies continue to update the executable directly. Backup folders from portable updates are retained when uninstalling.
 
-The original v0.1.1 updater only replaces the executable. Install the v0.1.2 MSI once to enable MSI-based updates for subsequent releases.
+The original v0.1.1 updater only replaces the executable. Install the v0.1.3 MSI once to enable MSI-based updates for subsequent releases. Version 0.1.3 also removes a PowerShell module dependency that could prevent v0.1.2 MSI updates from completing.
 
 For unattended installation, use `msiexec /i rdiff-0.1.1-windows-x86_64.msi /qn /norestart`.
 

@@ -1,6 +1,6 @@
 [package]
 name = "rdiff"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
 autoexamples = false
 description = "A native side-by-side text diff tool built with GPUI Kit"

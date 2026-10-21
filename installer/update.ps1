@@ -15,7 +15,11 @@ try {
         Start-Sleep -Seconds 2
     }
     Set-Content $statusPath "Installing rdiff $env:RDIFF_UPDATE_VERSION through Windows Installer."
-    if ((Get-FileHash -LiteralPath $env:RDIFF_MSI -Algorithm SHA256).Hash -ne $env:RDIFF_MSI_SHA256) {
+    $stream = [IO.File]::OpenRead($env:RDIFF_MSI)
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try { $hash = [BitConverter]::ToString($sha.ComputeHash($stream)).Replace('-', '') }
+    finally { $stream.Dispose(); $sha.Dispose() }
+    if ($hash -ne $env:RDIFF_MSI_SHA256) {
         throw 'MSI SHA-256 changed while waiting; installation canceled.'
     }
     $arguments = @('/i', ('"' + $env:RDIFF_MSI + '"'), '/qn', '/norestart', 'MSIRESTARTMANAGERCONTROL=Disable', '/L*v', ('"' + $logPath + '"'))
