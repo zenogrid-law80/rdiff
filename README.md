@@ -12,9 +12,9 @@ Download the Windows x64 `.msi` installer from [GitHub Releases](https://github.
 
 For MSI installations, self-update downloads and verifies the new MSI, then waits for all rdiff windows to close normally before running Windows Installer. Save your work and close rdiff when **Update ready · Close rdiff** appears. Windows Installed apps is updated to the new package version. The tooltip or CLI output provides a status-file path; its directory also contains the installation log. No editor process is forcibly closed and no automatic reboot is requested. Portable copies continue to update the executable directly. Backup folders from portable updates are retained when uninstalling.
 
-The original v0.1.1 updater only replaces the executable. Install the v0.1.3 MSI once to enable MSI-based updates for subsequent releases. Version 0.1.3 also removes a PowerShell module dependency that could prevent v0.1.2 MSI updates from completing.
+The original v0.1.1 updater only replaces the executable. Install the v0.1.3 or later MSI once to enable MSI-based updates for subsequent releases. Version 0.1.3 also removes a PowerShell module dependency that could prevent v0.1.2 MSI updates from completing.
 
-For unattended installation, use `msiexec /i rdiff-0.1.1-windows-x86_64.msi /qn /norestart`.
+For unattended installation, use `msiexec /i rdiff-0.1.4-windows-x86_64.msi /qn /norestart`.
 
 On Apple Silicon Macs running macOS 11 or later, download [rdiff-macos-arm64.dmg](https://github.com/zenogrid-law80/rdiff/releases/latest/download/rdiff-macos-arm64.dmg), open it, and drag **rdiff.app** to **Applications**. Intel Mac builds are not currently provided. The Mac build is ad-hoc signed and has not been notarized by Apple. If macOS blocks the first launch, review the app in **System Settings → Privacy & Security → Open Anyway**. Install Mac updates manually by replacing the app with the latest DMG; the built-in updater currently supports Windows x64 only.
 
@@ -123,6 +123,8 @@ For a comparison, add `-- diff examples/before.rs examples/after.rs`. For the sa
 - Saving completes a temporary file in the result directory before replacement. A failed save preserves the existing result. Only `%r` is written; inputs are snapshots read when the window opens.
 
 ## Development and validation
+
+On Windows, `build.rs` converts `website/favicon.svg` into a transparent ICO at 16, 24, 32, 48, 64, 128, and 256 pixels and embeds it in the executable. The SVG's aspect ratio is preserved. GPUI uses this resource for the window and taskbar icon. Changes to the SVG automatically rebuild the icon without a separate conversion tool.
 
 ```powershell
 cargo fmt --all --check

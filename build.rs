@@ -1,0 +1,65 @@
+use std::{env, error::Error, fs, io::Write, path::PathBuf};
+
+fn main() -> Result<(), Box<dyn Error>> {
+    println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=website/favicon.svg");
+    if env::var("CARGO_CFG_TARGET_OS")? != "windows" {
+        return Ok(());
+    }
+
+    let out_dir = PathBuf::from(env::var_os("OUT_DIR").ok_or("OUT_DIR is missing")?);
+    let svg = fs::read("website/favicon.svg")?;
+    let tree = resvg::usvg::Tree::from_data(&svg, &resvg::usvg::Options::default())?;
+    let sizes = [16u32, 24, 32, 48, 64, 128, 256];
+    let mut images = Vec::new();
+    for size in sizes {
+        let mut pixmap = resvg::tiny_skia::Pixmap::new(size, size)
+            .ok_or("Cannot allocate application icon image")?;
+        // Preserve the SVG's aspect ratio and center it on a transparent square.
+        let scale = (size as f32 / tree.size().width()).min(size as f32 / tree.size().height());
+        let transform = resvg::tiny_skia::Transform::from_row(
+            scale,
+            0.,
+            0.,
+            scale,
+            (size as f32 - tree.size().width() * scale) / 2.,
+            (size as f32 - tree.size().height() * scale) / 2.,
+        );
+        resvg::render(&tree, transform, &mut pixmap.as_mut());
+        images.push(pixmap.encode_png()?);
+    }
+
+    // ICO directory followed by PNG frames, preserving alpha transparency.
+    let mut icon = Vec::new();
+    icon.write_all(&0u16.to_le_bytes())?; // Reserved.
+    icon.write_all(&1u16.to_le_bytes())?; // Icon, rather than cursor.
+    icon.write_all(&(sizes.len() as u16).to_le_bytes())?;
+    let mut offset = 6 + 16 * sizes.len() as u32;
+    for (size, image) in sizes.into_iter().zip(&images) {
+        // An ICO dimension byte of zero represents 256 pixels.
+        icon.write_all(&[size as u8, size as u8, 0, 0])?;
+        icon.write_all(&1u16.to_le_bytes())?; // Color planes.
+        icon.write_all(&32u16.to_le_bytes())?; // RGBA bits per pixel.
+        icon.write_all(&(image.len() as u32).to_le_bytes())?;
+        icon.write_all(&offset.to_le_bytes())?;
+        offset += image.len() as u32;
+    }
+    for image in images {
+        icon.write_all(&image)?;
+    }
+    let icon_path = out_dir.join("rdiff.ico");
+    fs::write(&icon_path, icon)?;
+
+    // GPUI loads resource 1 for the window and taskbar icon on Windows.
+    let resource_path = out_dir.join("rdiff.rc");
+    fs::write(
+        &resource_path,
+        format!(
+            "1 ICON \"{}\"\n",
+            icon_path.to_string_lossy().replace('\\', "/")
+        ),
+    )?;
+    embed_resource::compile_for(&resource_path, ["rdiff"], embed_resource::NONE)
+        .manifest_required()?;
+    Ok(())
+}

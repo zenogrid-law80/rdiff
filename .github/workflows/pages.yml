@@ -28,7 +28,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Validate website JavaScript
-        run: node --check website/script.js
+        run: |
+          node --check website/i18n.js
+          node --check website/script.js
+          node --test tests/website.test.cjs
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
       - name: Upload website

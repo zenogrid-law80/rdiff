@@ -1,4 +1,112 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
-  <rect width="48" height="48" rx="10" fill="#101313"/>
-  <path d="M13 10v28M35 10v28M13 17h8l6 14h8M13 31h8l6-14h8" fill="none" stroke="#c0ef83" stroke-width="3" stroke-linejoin="bevel"/>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="530" viewBox="0 0 600 530" fill="none" role="img" aria-labelledby="title description">
+  <title id="title">Diff comparison panel</title>
+  <desc id="description">An editable rounded navy panel with a slate border and center divider, red deletion marks on the left, and green addition marks on the right. The area outside the panel is transparent.</desc>
+  <defs>
+    <linearGradient id="panel-fill" x1="76" y1="18" x2="475" y2="527" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#19222D"/>
+      <stop offset="0.48" stop-color="#0D151F"/>
+      <stop offset="1" stop-color="#101923"/>
+    </linearGradient>
+    <linearGradient id="border-fill" x1="50" y1="0" x2="545" y2="530" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#536172"/>
+      <stop offset="0.5" stop-color="#48576A"/>
+      <stop offset="1" stop-color="#435165"/>
+    </linearGradient>
+    <linearGradient id="header-fill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4C5C6D"/>
+      <stop offset="1" stop-color="#455467"/>
+    </linearGradient>
+    <linearGradient id="delete-fill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FF4C50"/>
+      <stop offset="1" stop-color="#F34448"/>
+    </linearGradient>
+    <linearGradient id="delete-muted-fill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#813437"/>
+      <stop offset="1" stop-color="#943A3E"/>
+    </linearGradient>
+    <linearGradient id="delete-secondary-fill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#783034"/>
+      <stop offset="1" stop-color="#853337"/>
+    </linearGradient>
+    <linearGradient id="add-fill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#31BB7D"/>
+      <stop offset="1" stop-color="#30B376"/>
+    </linearGradient>
+    <linearGradient id="add-first-fill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#31AB74"/>
+      <stop offset="1" stop-color="#2DAA74"/>
+    </linearGradient>
+    <linearGradient id="add-muted-fill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2B6758"/>
+      <stop offset="1" stop-color="#2C6053"/>
+    </linearGradient>
+    <linearGradient id="add-secondary-fill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#268667"/>
+      <stop offset="1" stop-color="#247B60"/>
+    </linearGradient>
+    <linearGradient id="neutral-fill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#303C48"/>
+      <stop offset="1" stop-color="#34414D"/>
+    </linearGradient>
+    <linearGradient id="neutral-green-fill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2D4148"/>
+      <stop offset="1" stop-color="#304149"/>
+    </linearGradient>
+    <linearGradient id="plus-fill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#36D084"/>
+      <stop offset="1" stop-color="#2BC57C"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Each visible element is a named, editable vector object. -->
+  <g id="panel-frame">
+    <rect id="panel-background" x="9" y="9" width="582" height="512" rx="70" fill="url(#panel-fill)"/>
+    <path id="center-divider" d="M301 18V512" stroke="#536273" stroke-width="7"/>
+    <rect id="panel-border" x="9" y="9" width="582" height="512" rx="70" stroke="url(#border-fill)" stroke-width="18"/>
+  </g>
+
+  <g id="column-headers" fill="url(#header-fill)">
+    <rect id="left-header" x="76" y="78" width="150" height="28" rx="7"/>
+    <rect id="right-header" x="333" y="78" width="179" height="28" rx="8"/>
+  </g>
+
+  <g id="deletions">
+    <g id="deletion-row-1">
+      <rect id="minus-1" x="41" y="141" width="45" height="13" rx="5" fill="url(#delete-fill)"/>
+      <rect id="deleted-line-1" x="109" y="132" width="165" height="36" rx="7" fill="url(#delete-muted-fill)"/>
+      <rect id="deleted-detail-1" x="102" y="190" width="105" height="34" rx="7" fill="url(#delete-secondary-fill)"/>
+    </g>
+    <g id="deletion-row-2">
+      <rect id="minus-2" x="41" y="255" width="45" height="14" rx="5" fill="url(#delete-fill)"/>
+      <rect id="deleted-line-2" x="109" y="246" width="165" height="36" rx="7" fill="url(#delete-fill)"/>
+      <rect id="deleted-detail-2" x="104" y="304" width="131" height="34" rx="7" fill="url(#delete-secondary-fill)"/>
+    </g>
+    <g id="deletion-row-3">
+      <rect id="minus-3" x="41" y="370" width="45" height="14" rx="5" fill="url(#delete-fill)"/>
+      <rect id="deleted-line-3" x="109" y="362" width="165" height="36" rx="7" fill="url(#neutral-fill)"/>
+      <rect id="deleted-detail-3" x="85" y="423" width="130" height="36" rx="7" fill="url(#neutral-fill)"/>
+    </g>
+  </g>
+
+  <g id="additions">
+    <g id="addition-row-1">
+      <path id="plus-1" d="M354 138V171M338 154.5H370" stroke="url(#plus-fill)" stroke-width="12" stroke-linecap="round"/>
+      <rect id="added-line-1" x="396" y="137" width="160" height="36" rx="7" fill="url(#add-first-fill)"/>
+      <rect id="added-line-1-edge" x="396.75" y="137.75" width="158.5" height="34.5" rx="6.25" stroke="#42CE88" stroke-opacity="0.45" stroke-width="1.5"/>
+      <rect id="added-detail-1" x="391" y="194" width="102" height="34" rx="7" fill="url(#add-muted-fill)"/>
+    </g>
+    <g id="addition-row-2">
+      <path id="plus-2" d="M354 253V286M338 269.5H370" stroke="url(#plus-fill)" stroke-width="12" stroke-linecap="round"/>
+      <rect id="added-line-2" x="396" y="251" width="160" height="36" rx="7" fill="url(#add-fill)"/>
+      <rect id="added-line-2-edge" x="396.75" y="251.75" width="158.5" height="34.5" rx="6.25" stroke="#48D38D" stroke-opacity="0.4" stroke-width="1.5"/>
+      <rect id="added-detail-2" x="391" y="313" width="128" height="36" rx="7" fill="url(#add-secondary-fill)"/>
+    </g>
+    <g id="addition-row-3">
+      <path id="plus-3" d="M354 381V414M338 397.5H370" stroke="url(#plus-fill)" stroke-width="12" stroke-linecap="round"/>
+      <rect id="added-line-3" x="396" y="379" width="160" height="36" rx="7" fill="url(#add-fill)"/>
+      <rect id="added-line-3-edge" x="396.75" y="379.75" width="158.5" height="34.5" rx="6.25" stroke="#48D38D" stroke-opacity="0.4" stroke-width="1.5"/>
+      <rect id="added-detail-3" x="391" y="440" width="129" height="35" rx="7" fill="url(#neutral-green-fill)"/>
+    </g>
+  </g>
 </svg>
