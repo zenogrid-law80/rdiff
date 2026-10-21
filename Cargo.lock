@@ -5087,19 +5087,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rdiff"
-version = "0.1.3"
-dependencies = [
- "gpui-kit",
- "semver",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "similar 3.2.0",
- "tempfile",
-]
-
-[[package]]
 name = "read-fonts"
 version = "0.37.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5254,6 +5241,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47b34b781b31e5d73e9fbc8689c70551fd1ade9a19e3e28cfec8580a79290cc4"
 dependencies = [
  "bytemuck",
+]
+
+[[package]]
+name = "ridff-tools"
+version = "0.1.3"
+dependencies = [
+ "gpui-kit",
+ "semver",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "similar 3.2.0",
+ "tempfile",
 ]
 
 [[package]]

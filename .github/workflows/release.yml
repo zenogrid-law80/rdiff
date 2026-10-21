@@ -16,7 +16,7 @@ jobs:
       - name: Validate release version
         shell: pwsh
         run: |
-          $package = (cargo metadata --no-deps --format-version 1 | ConvertFrom-Json).packages | Where-Object name -eq 'rdiff'
+          $package = (cargo metadata --no-deps --format-version 1 | ConvertFrom-Json).packages | Where-Object name -eq 'ridff-tools'
           if ($env:GITHUB_REF_NAME -cne "v$($package.version)") { throw 'Tag must match Cargo.toml version' }
           if ($package.version -notmatch '^\d+\.\d+\.\d+$') { throw 'Stable releases only' }
       - name: Test

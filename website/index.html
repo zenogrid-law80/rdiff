@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101313">
+  <meta name="description" content="rdiff는 Windows를 위한 네이티브 텍스트 비교·3-way 병합 도구입니다. 변경 내용을 나란히 비교하고, 직접 편집하고, P4V 워크플로에 연결하세요.">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="ko_KR">
+  <meta property="og:title" content="rdiff — 차이는 선명하게. 병합은 자연스럽게.">
+  <meta property="og:description" content="텍스트 비교부터 3-way 병합까지. Rust와 GPUI로 만든 Windows 네이티브 도구.">
+  <meta property="og:url" content="https://rdiff.zenogrid.co.kr/">
+  <link rel="canonical" href="https://rdiff.zenogrid.co.kr/">
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./styles.css">
+  <script src="./script.js" defer></script>
+  <title>rdiff — 차이는 선명하게. 병합은 자연스럽게.</title>
+</head>
+<body>
+  <a class="skip-link" href="#main">본문으로 건너뛰기</a>
+  <svg class="icon-definitions" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <symbol id="i-mark" viewBox="0 0 32 32"><path d="M7 6v20M25 6v20M7 11h7l4 10h7M7 21h7l4-10h7"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M5 16v5h14v-5"/></symbol>
+    <symbol id="i-github" viewBox="0 0 24 24"><path d="M9 19c-4.3 1.3-4.3-2.2-6-2.7m12 5v-3.4a3 3 0 0 0-.8-2.3c2.7-.3 5.5-1.3 5.5-6a4.7 4.7 0 0 0-1.3-3.3 4.4 4.4 0 0 0-.1-3.3S17.3 2.7 15 4a11.5 11.5 0 0 0-6 0C6.7 2.7 5.7 3 5.7 3a4.4 4.4 0 0 0-.1 3.3 4.7 4.7 0 0 0-1.3 3.3c0 4.7 2.8 5.7 5.5 6A3 3 0 0 0 9 18v3.3"/></symbol>
+    <symbol id="i-compare" viewBox="0 0 24 24"><path d="M3 4h7v16H3zM14 4h7v16h-7zM6 8h1m-1 4h1m10-4h1m-1 8h1"/></symbol>
+    <symbol id="i-merge" viewBox="0 0 24 24"><path d="M6 3v5c0 4 12 4 12 8v5M18 3v5c0 4-6 4-6 8v5M3 6l3-3 3 3m6 0 3-3 3 3"/></symbol>
+    <symbol id="i-terminal" viewBox="0 0 24 24"><path d="m4 6 6 6-6 6m9 0h7"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/></symbol>
+    <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6m0-6L10 14M10 4H4v16h16v-6"/></symbol>
+    <symbol id="i-windows" viewBox="0 0 24 24"><path d="m3 5 8-1v7H3zm10-1 8-1v8h-8zM3 13h8v7l-8-1zm10 0h8v8l-8-1z"/></symbol>
+  </svg>
+
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="wordmark" href="#" aria-label="rdiff 홈"><svg aria-hidden="true" class="brand-mark"><use href="#i-mark"/></svg><span>rdiff<span class="wordmark-dot">.</span></span></a>
+      <nav class="main-nav" aria-label="주 메뉴">
+        <a href="#features">주요 기능</a>
+        <a href="#quickstart">시작하기</a>
+        <a href="#faq">FAQ</a>
+      </nav>
+      <div class="header-actions">
+        <a class="github-link" href="https://github.com/zenogrid-law80/rdiff" aria-label="GitHub 저장소"><svg aria-hidden="true" class="icon"><use href="#i-github"/></svg><span>GitHub</span></a>
+        <a class="button button-small button-outline" href="#download">다운로드<svg aria-hidden="true" class="icon"><use href="#i-arrow"/></svg></a>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero container" aria-labelledby="hero-title">
+      <div class="hero-topline"><span class="eyebrow"><span class="status-dot"></span> A CLEARER VIEW OF CHANGE</span><span class="hero-platform">NATIVE FOR WINDOWS</span></div>
+      <div class="hero-copy">
+        <h1 id="hero-title">차이는 선명하게.<br>병합은 <span>자연스럽게.</span></h1>
+        <div class="hero-intro">
+          <p>두 파일 사이의 작은 차이부터<br class="desktop-break"> 세 갈래로 나뉜 코드의 충돌까지.<br>비교하고, 편집하고, 하나로 연결하세요.</p>
+          <a class="button button-primary" href="https://github.com/zenogrid-law80/rdiff/releases/latest"><svg aria-hidden="true" class="icon"><use href="#i-windows"/></svg>Windows 다운로드<svg aria-hidden="true" class="icon"><use href="#i-arrow"/></svg></a>
+          <p class="download-note">Windows x64 <span>·</span> MSI / 포터블 EXE <span>·</span> MIT</p>
+        </div>
+      </div>
+
+      <div class="product-demo" id="demo">
+        <div class="demo-topbar">
+          <span class="demo-app-name"><svg aria-hidden="true" class="icon"><use href="#i-mark"/></svg>rdiff <span class="demo-label">INTERACTIVE PREVIEW</span></span>
+          <div class="tab-list demo-tabs" role="tablist" aria-label="화면 예시 선택">
+            <button id="diff-tab" class="tab active" type="button" role="tab" aria-selected="true" aria-controls="diff-panel" data-demo-tab="diff"><svg aria-hidden="true" class="icon"><use href="#i-compare"/></svg>파일 비교</button>
+            <button id="merge-tab" class="tab" type="button" role="tab" aria-selected="false" aria-controls="merge-panel" tabindex="-1" data-demo-tab="merge"><svg aria-hidden="true" class="icon"><use href="#i-merge"/></svg>3-way 병합</button>
+          </div>
+          <span class="window-buttons" aria-hidden="true"><span>−</span><span>□</span><span>×</span></span>
+        </div>
+        <div class="demo-toolbar"><span><span class="file-dot"></span>config.rs</span><span class="toolbar-detail">Words <span>·</span> Sync scroll <svg aria-hidden="true" class="icon"><use href="#i-check"/></svg></span><button type="button" class="text-button" id="reset-demo">초기화 <span aria-hidden="true">↺</span></button></div>
+        <div class="editor-scroll" tabindex="0" role="region" aria-label="비교·병합 화면 예시. 좁은 화면에서는 좌우로 스크롤할 수 있습니다.">
+          <div id="diff-panel" class="demo-panel diff-grid" role="tabpanel" aria-labelledby="diff-tab" tabindex="0">
+            <div class="pane-heading"><span>ORIGINAL</span><span>config.rs</span></div><div class="gutter-heading" aria-hidden="true">↔</div><div class="pane-heading"><span>MODIFIED</span><span>config.rs</span></div>
+            <div class="code-pane" aria-label="원본 코드" data-diff-side="original">
+              <div class="code-line"><span class="kw">fn</span> <span class="fn">default</span>() -&gt; <span class="type">AppConfig</span> {</div>
+              <div class="code-line">    <span class="type">AppConfig</span> {</div>
+              <div class="code-line">        theme: <span class="str">"dark"</span>,</div>
+              <div class="code-line diff-old" data-diff-highlight>        retries: <span class="token-old">3</span>,</div>
+              <div class="code-line diff-old" data-diff-highlight>        timeout_ms: <span class="token-old">1000</span>,</div>
+              <div class="code-line">        sync_scroll: <span class="kw">true</span>,</div>
+              <div class="code-line">    }</div><div class="code-line">}</div>
+              <div class="code-line code-comment">// A little change. A clearer view.</div>
+            </div>
+            <div class="line-gutter" aria-hidden="true"><span>1&nbsp; 1</span><span>2&nbsp; 2</span><span>3&nbsp; 3</span><span class="changed-number">4&nbsp; 4</span><span class="changed-number">5&nbsp; 5</span><span>6&nbsp; 6</span><span>7&nbsp; 7</span><span>8&nbsp; 8</span><span>9&nbsp; 9</span></div>
+            <div class="code-pane" aria-label="수정본 코드" data-diff-side="modified">
+              <div class="code-line"><span class="kw">fn</span> <span class="fn">default</span>() -&gt; <span class="type">AppConfig</span> {</div>
+              <div class="code-line">    <span class="type">AppConfig</span> {</div>
+              <div class="code-line">        theme: <span class="str">"dark"</span>,</div>
+              <div class="code-line diff-new" data-diff-highlight>        retries: <span class="token-new" id="diff-retries">5</span>,</div>
+              <div class="code-line diff-new" data-diff-highlight>        timeout_ms: <span class="token-new" id="diff-timeout">3000</span>,</div>
+              <div class="code-line">        sync_scroll: <span class="kw">true</span>,</div>
+              <div class="code-line">    }</div><div class="code-line">}</div>
+              <div class="code-line code-comment">// A little change. A clearer view.</div>
+            </div>
+          </div>
+          <div id="merge-panel" class="demo-panel merge-grid" role="tabpanel" aria-labelledby="merge-tab" tabindex="0" hidden>
+            <div class="pane-heading"><span>SOURCE</span><span>변경 내용 A</span></div><div class="pane-heading result-heading"><span>RESULT</span><span>병합 결과</span></div><div class="pane-heading"><span>TARGET</span><span>변경 내용 B</span></div>
+            <div class="code-pane"><div class="code-line"><span class="kw">fn</span> <span class="fn">default</span>() -&gt; <span class="type">AppConfig</span> {</div><div class="code-line">    <span class="type">AppConfig</span> {</div><div class="code-line">        theme: <span class="str">"dark"</span>,</div><div class="code-line diff-new">        retries: <span class="token-new">5</span>,</div><div class="code-line">        timeout_ms: <span class="num">3000</span>,</div><div class="code-line">        sync_scroll: <span class="kw">true</span>,</div><div class="code-line">    }</div><div class="code-line">}</div><div class="code-line code-comment">// Source / Theirs</div></div>
+            <div class="code-pane result-pane"><div class="code-line"><span class="kw">fn</span> <span class="fn">default</span>() -&gt; <span class="type">AppConfig</span> {</div><div class="code-line">    <span class="type">AppConfig</span> {</div><div class="code-line">        theme: <span class="str">"dark"</span>,</div><div class="code-line conflict-line" id="merge-result-line">        retries: <span id="merge-result" class="token-conflict">3</span>,</div><div class="code-line">        timeout_ms: <span class="num">3000</span>,</div><div class="code-line">        sync_scroll: <span class="kw">true</span>,</div><div class="code-line">    }</div><div class="code-line">}</div><div class="code-line code-comment" id="merge-comment">// Base · 충돌을 해결해 주세요</div></div>
+            <div class="code-pane"><div class="code-line"><span class="kw">fn</span> <span class="fn">default</span>() -&gt; <span class="type">AppConfig</span> {</div><div class="code-line">    <span class="type">AppConfig</span> {</div><div class="code-line">        theme: <span class="str">"dark"</span>,</div><div class="code-line diff-new">        retries: <span class="token-new">8</span>,</div><div class="code-line">        timeout_ms: <span class="num">3000</span>,</div><div class="code-line">        sync_scroll: <span class="kw">true</span>,</div><div class="code-line">    }</div><div class="code-line">}</div><div class="code-line code-comment">// Target / Yours</div></div>
+          </div>
+        </div>
+        <div class="demo-bottom-bar">
+          <p id="demo-status" class="demo-status" role="status"><span class="status-dot"></span>2줄 변경 <span class="status-divider">/</span> 1개 블록</p>
+          <div id="diff-actions"><button class="demo-action" type="button" id="apply-diff">원본을 수정본에 적용 <svg aria-hidden="true" class="icon"><use href="#i-arrow"/></svg></button></div>
+          <div id="merge-actions" class="merge-actions" hidden><button class="demo-action" type="button" data-merge-choice="source">Source 적용 <span aria-hidden="true">→</span></button><button class="demo-action" type="button" data-merge-choice="target"><span aria-hidden="true">←</span> Target 적용</button></div>
+        </div>
+      </div>
+      <p class="demo-caption"><span><span class="caption-cross" aria-hidden="true">+</span> 버튼을 눌러 비교와 병합을 체험해 보세요.</span><span>앱의 동작을 단순화한 화면 예시입니다.</span></p>
+      <noscript><p class="noscript-note">화면 예시의 전환과 명령어 복사에는 JavaScript가 필요합니다. 다운로드와 사용 안내는 그대로 이용할 수 있습니다.</p></noscript>
+
+      <div class="built-with"><span>만드는 일에 집중할 수 있도록.</span><ul aria-label="기술과 지원 기능"><li>Rust <span>+ GPUI</span></li><li>2-way diff</li><li>3-way merge</li><li>P4V</li><li>Open source <svg aria-hidden="true" class="icon"><use href="#i-external"/></svg></li></ul></div>
+    </section>
+
+    <section class="features-section section-border" id="features" aria-labelledby="features-title">
+      <div class="container features-layout">
+        <div class="section-intro"><span class="eyebrow">01 / MADE FOR THE DETAILS</span><h2 id="features-title">변경의 맥락까지,<br>놓치지 않도록.</h2><p>필요한 부분을 또렷하게 보고,<br>익숙한 키보드 흐름으로 작업하세요.</p><div class="shortcut-note"><kbd>Alt</kbd><span>+</span><kbd>↓</kbd><span>다음 변경으로 이동</span></div></div>
+        <div class="feature-list">
+          <article class="feature-row"><span class="feature-icon"><svg aria-hidden="true" class="icon"><use href="#i-compare"/></svg></span><div><h3>나란히 비교하고, 바로 편집하고.</h3><p>줄·단어·문자 단위 하이라이트로 달라진 곳을 확인하세요. 오른쪽 파일을 직접 편집하거나 변경 블록을 적용하고, Undo / Redo로 되돌릴 수 있습니다.</p><ul class="feature-tags"><li>동기화 스크롤</li><li>동일한 구간 접기</li><li>공백 비교 옵션</li></ul></div></article>
+          <article class="feature-row"><span class="feature-icon"><svg aria-hidden="true" class="icon"><use href="#i-merge"/></svg></span><div><h3>세 갈래의 변경을 하나의 결과로.</h3><p>공통 원본을 기준으로 겹치지 않는 변경을 자동 병합합니다. 충돌은 Source와 Target을 비교해 선택하거나, 가운데 Result에서 직접 편집하세요.</p><ul class="feature-tags"><li>3-way 병합</li><li>충돌 탐색</li><li>명시적인 결과 저장</li></ul></div></article>
+          <article class="feature-row"><span class="feature-icon"><svg aria-hidden="true" class="icon"><use href="#i-terminal"/></svg></span><div><h3>지금 쓰는 워크플로에 연결.</h3><p>터미널에서 두 파일을 열거나 P4V의 외부 비교·병합 도구로 등록하세요. 결과 저장과 종료 코드로 다음 작업을 이어갈 수 있습니다.</p><ul class="feature-tags"><li>CLI</li><li>Perforce P4V</li><li>UTF-8 텍스트</li></ul></div></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="quickstart-section container" id="quickstart" aria-labelledby="quickstart-title">
+      <div class="section-heading"><div><span class="eyebrow">02 / FITS YOUR FLOW</span><h2 id="quickstart-title">설치하고, 바로 비교하세요.</h2></div><a class="inline-link" href="https://github.com/zenogrid-law80/rdiff#readme">전체 사용 가이드<svg aria-hidden="true" class="icon"><use href="#i-external"/></svg></a></div>
+      <div class="quickstart-layout">
+        <div class="setup-guide"><span class="step-index">GET STARTED</span><ol><li><span>01</span><div><h3>Windows 버전 받기</h3><p><a href="https://github.com/zenogrid-law80/rdiff/releases/latest">최신 릴리스</a>에서 MSI를 설치하거나 포터블 EXE를 내려받으세요.</p></div></li><li><span>02</span><div><h3>비교할 파일 연결하기</h3><p>앱의 파일 열기 기능을 사용하거나, 실행 파일 경로와 함께 오른쪽 명령어를 사용하세요.</p></div></li><li><span>03</span><div><h3>변경을 검토하고 저장하기</h3><p>필요한 변경을 적용한 후 저장하세요. 병합에서는 모든 충돌을 해결한 뒤 결과를 저장합니다.</p></div></li></ol></div>
+        <div class="terminal-card">
+          <div class="terminal-header"><div class="tab-list command-tabs" role="tablist" aria-label="사용 환경 선택"><button class="tab active" type="button" role="tab" id="cli-tab" aria-controls="cli-panel" aria-selected="true" data-command-tab="cli">터미널</button><button class="tab" type="button" role="tab" id="p4v-tab" aria-controls="p4v-panel" aria-selected="false" tabindex="-1" data-command-tab="p4v">P4V 설정</button></div><span class="terminal-platform">WINDOWS / POWERSHELL</span></div>
+          <div id="cli-panel" role="tabpanel" aria-labelledby="cli-tab" class="command-panel"><div class="command-block"><div class="command-label"><span>두 파일 비교</span><button type="button" class="copy-button" data-copy="cli-diff" aria-label="파일 비교 명령어 복사"><svg aria-hidden="true" class="icon"><use href="#i-copy"/></svg><span>복사</span></button></div><pre><code id="cli-diff">rdiff diff "before.rs" "after.rs"</code></pre></div><div class="command-block"><div class="command-label"><span>3-way 병합</span><button type="button" class="copy-button" data-copy="cli-merge" aria-label="3-way 병합 명령어 복사"><svg aria-hidden="true" class="icon"><use href="#i-copy"/></svg><span>복사</span></button></div><pre><code id="cli-merge">rdiff merge "source.rs" "target.rs" "base.rs" "result.rs"</code></pre></div><div class="terminal-note"><svg aria-hidden="true" class="icon"><use href="#i-terminal"/></svg><p><code>rdiff.exe</code>가 있는 폴더에서는 <code>.\rdiff.exe</code>로 실행하세요. 다른 폴더에서는 전체 경로를 사용하거나 PATH에 추가하세요.</p></div></div>
+          <div id="p4v-panel" role="tabpanel" aria-labelledby="p4v-tab" class="command-panel" hidden><div class="command-block"><div class="command-label"><span>Diff 도구 인수</span><button type="button" class="copy-button" data-copy="p4v-diff" aria-label="P4V 비교 인수 복사"><svg aria-hidden="true" class="icon"><use href="#i-copy"/></svg><span>복사</span></button></div><pre><code id="p4v-diff">diff "%1" "%2"</code></pre></div><div class="command-block"><div class="command-label"><span>Merge 도구 인수</span><button type="button" class="copy-button" data-copy="p4v-merge" aria-label="P4V 병합 인수 복사"><svg aria-hidden="true" class="icon"><use href="#i-copy"/></svg><span>복사</span></button></div><pre><code id="p4v-merge">merge "%1" "%2" "%b" "%r"</code></pre></div><div class="terminal-note"><svg aria-hidden="true" class="icon"><use href="#i-terminal"/></svg><p>P4V의 외부 Diff / Merge 도구에 <code>rdiff.exe</code>의 전체 경로를 지정하세요. 인수 순서는 Source, Target, Base, Result입니다.</p></div></div>
+        </div>
+      </div>
+      <p id="copy-status" class="sr-only" role="status"></p>
+    </section>
+
+    <section class="faq-section section-border" id="faq" aria-labelledby="faq-title"><div class="container faq-layout"><div class="section-intro"><span class="eyebrow">03 / GOOD TO KNOW</span><h2 id="faq-title">시작 전,<br>궁금한 것들.</h2><a class="inline-link" href="https://github.com/zenogrid-law80/rdiff/issues">이슈 남기기<svg aria-hidden="true" class="icon"><use href="#i-arrow"/></svg></a></div><div class="faq-list"><details><summary>어떤 파일과 운영체제를 지원하나요?<span aria-hidden="true">+</span></summary><p>배포 파일은 Windows x64용입니다. 파일당 최대 2 MiB의 UTF-8 텍스트를 지원하며 UTF-8 BOM은 저장 시 유지합니다. 바이너리, UTF-16, 폴더 비교는 지원하지 않습니다.</p></details><details><summary>MSI와 포터블 EXE는 어떻게 다른가요?<span aria-hidden="true">+</span></summary><p>MSI는 현재 사용자 계정에 설치되고 시작 메뉴에 바로가기를 만듭니다. 관리자 권한 없이 설치할 수 있으며 Windows 설치된 앱에서 제거할 수 있습니다. 포터블 EXE는 원하는 폴더에 두고 바로 실행할 수 있습니다.</p></details><details><summary>병합하면 원본 파일도 바뀌나요?<span aria-hidden="true">+</span></summary><p>3-way 병합에서는 Source, Target, Base를 입력으로 읽고 지정한 Result 경로에만 저장합니다. 자동 병합이 끝나도 저장 버튼을 누르기 전에는 결과 파일을 쓰지 않습니다. Result 경로는 보존할 입력 파일과 다르게 지정하세요.</p></details><details><summary>업데이트와 소스 코드는 어디서 확인하나요?<span aria-hidden="true">+</span></summary><p><a href="https://github.com/zenogrid-law80/rdiff/releases">GitHub Releases</a>에서 릴리스를 확인할 수 있습니다. 앱의 업데이트 확인 기능이나 <code>rdiff self-update --check</code> 명령도 사용할 수 있습니다. 소스 코드는 <a href="https://github.com/zenogrid-law80/rdiff">GitHub 저장소</a>에서 MIT 라이선스로 공개합니다.</p></details></div></div></section>
+
+    <section class="download-section container" id="download" aria-labelledby="download-title"><div class="download-panel"><div><span class="eyebrow"><span class="status-dot"></span> LESS FRICTION. MORE FLOW.</span><h2 id="download-title">다음 변경부터,<br>rdiff와 함께.</h2><p>비교와 병합에 집중할 수 있는 작은 도구.</p></div><div class="download-options"><a class="button button-primary" href="https://github.com/zenogrid-law80/rdiff/releases/latest"><svg aria-hidden="true" class="icon"><use href="#i-download"/></svg>Windows 설치 파일 선택<svg aria-hidden="true" class="icon"><use href="#i-arrow"/></svg></a><a class="button button-outline" href="https://github.com/zenogrid-law80/rdiff/releases/latest/download/rdiff-windows-x86_64.exe">포터블 EXE 다운로드<svg aria-hidden="true" class="icon"><use href="#i-external"/></svg></a><p>Windows x64 <span>·</span> 무료 오픈 소스 <span>·</span> MSI는 릴리스에서 선택</p></div></div></section>
+  </main>
+
+  <footer class="site-footer container"><div><a class="wordmark footer-wordmark" href="#" aria-label="rdiff 홈"><svg aria-hidden="true" class="brand-mark"><use href="#i-mark"/></svg><span>rdiff<span class="wordmark-dot">.</span></span></a><span class="footer-credit">Built with Rust &amp; GPUI. <span class="footer-package">Package: ridff-tools</span></span></div><nav aria-label="하단 메뉴"><a href="https://github.com/zenogrid-law80/rdiff">GitHub</a><a href="https://github.com/zenogrid-law80/rdiff/releases">릴리스</a><a href="https://github.com/zenogrid-law80/rdiff#license">MIT License</a><a href="https://github.com/zenogrid-law80">zenogrid</a></nav></footer>
+</body>
+</html>

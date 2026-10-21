@@ -2,6 +2,10 @@
 
 A native text comparison and three-way merge tool built with Rust, [GPUI Kit 0.8.0](https://gpui-kit.com/docs/getting-started/), and similar 3.2.0.
 
+Website: [rdiff.zenogrid.co.kr](https://rdiff.zenogrid.co.kr)
+
+The static website lives in [`website/`](website/) and is deployed through GitHub Pages.
+
 ## Running
 
 Download the Windows x64 `.msi` installer from [GitHub Releases](https://github.com/zenogrid-law80/rdiff/releases/latest). It installs for the current user at `%LOCALAPPDATA%\Programs\rdiff`, adds a Start menu shortcut, and can be removed through Windows **Installed apps**. Administrator access is not required. The standalone `.exe` is also available for portable use.
