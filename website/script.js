@@ -203,3 +203,19 @@ document.querySelectorAll("[data-copy]").forEach((button) => {
 });
 
 translatePage();
+
+async function updateReleaseBadge() {
+  try {
+    const response = await fetch("https://api.github.com/repos/zenogrid-law80/rdiff/releases/latest", {
+      headers: { Accept: "application/vnd.github+json" }
+    });
+    if (!response.ok) return;
+    const release = await response.json();
+    if (release.draft || release.prerelease || !/^v?\d+\.\d+\.\d+$/.test(release.tag_name)) return;
+    byId("release-version").textContent = release.tag_name.startsWith("v") ? release.tag_name : `v${release.tag_name}`;
+  } catch {
+    // Keep the bundled version when GitHub is unavailable.
+  }
+}
+
+updateReleaseBadge();

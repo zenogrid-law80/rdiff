@@ -21,6 +21,7 @@ const siteMessages = Object.freeze({
   "theme.dark": ["어두운 테마", "Dark", "深色"],
   "hero.eyebrow": ["A CLEARER VIEW OF CHANGE", "A CLEARER VIEW OF CHANGE", "讓每一處變更更清楚"],
   "hero.platform": ["NATIVE FOR WINDOWS & MACOS", "NATIVE FOR WINDOWS & MACOS", "WINDOWS 與 MACOS 原生應用程式"],
+  "release.latest": ["최신 버전", "Latest release", "最新版本"],
   "hero.title": ["차이는 선명하게.<br>병합은 <span>자연스럽게.</span>", "Clearer changes.<br><span>Smoother merges.</span>", "清楚比較，<br><span>順暢合併。</span>"],
   "hero.intro": ["두 파일 사이의 작은 차이부터<br class=\"desktop-break\"> 세 갈래로 나뉜 코드의 충돌까지.<br>비교하고, 편집하고, 하나로 연결하세요.", "From small differences between two files<br class=\"desktop-break\"> to conflicts across three versions.<br>Compare, edit, and bring it all together.", "從兩個檔案的細微差異，<br class=\"desktop-break\">到三個版本之間的程式碼衝突。<br>比較、編輯，讓變更合而為一。"],
   "download.windows": ["Windows 다운로드", "Download for Windows", "下載 Windows 版"],

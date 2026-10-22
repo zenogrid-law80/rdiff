@@ -159,7 +159,13 @@ ul, ol { margin: 0; padding: 0; }
 .button-small { min-height: 37px; padding: 7px 13px; gap: 12px; font-size: 12px; }
 .button-small .icon { width: 15px; height: 15px; }
 .hero { padding-top: 66px; }
-.hero-topline { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.hero-topline { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px 20px; }
+.hero-meta { display: flex; align-items: center; gap: 18px; }
+.release-badge { display: inline-flex; align-items: center; gap: 9px; padding: 5px 10px; border: 1px solid var(--accent-border); border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 10px; line-height: 1.5; white-space: nowrap; transition: border-color .16s, background .16s; }
+.release-badge:hover { border-color: var(--accent); background: var(--accent-faint); }
+.release-badge > span:first-child { color: var(--muted); }
+.release-badge #release-version { font-family: var(--mono); font-weight: 650; }
+.release-badge .icon { width: 12px; height: 12px; }
 .eyebrow { display: inline-flex; align-items: center; gap: 10px; font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: 1.4px; line-height: 1.6; color: var(--accent); }
 .status-dot { display: inline-block; width: 6px; height: 6px; flex: 0 0 auto; border-radius: 50%; background: var(--accent); }
 .hero-platform { font-family: var(--mono); font-size: 9px; letter-spacing: 1.6px; color: var(--subtle); }
