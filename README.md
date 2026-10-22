@@ -14,7 +14,7 @@ For MSI installations, self-update downloads and verifies the new MSI, then wait
 
 The original v0.1.1 updater only replaces the executable. Install the v0.1.3 or later MSI once to enable MSI-based updates for subsequent releases. Version 0.1.3 also removes a PowerShell module dependency that could prevent v0.1.2 MSI updates from completing.
 
-For unattended installation, use `msiexec /i rdiff-0.1.6-windows-x86_64.msi /qn /norestart`.
+For unattended installation, use `msiexec /i rdiff-0.1.7-windows-x86_64.msi /qn /norestart`.
 
 On Apple Silicon Macs running macOS 11 or later, download [rdiff-macos-arm64.dmg](https://github.com/zenogrid-law80/rdiff/releases/latest/download/rdiff-macos-arm64.dmg), open it, and drag **rdiff.app** to **Applications**. Intel Mac builds are not currently provided. The Mac build is ad-hoc signed and has not been notarized by Apple. If macOS blocks the first launch, review the app in **System Settings → Privacy & Security → Open Anyway**. Install Mac updates manually by replacing the app with the latest DMG; the built-in updater currently supports Windows x64 only.
 
@@ -78,6 +78,8 @@ For a comparison, add `-- diff examples/before.rs examples/after.rs`. For the sa
 The focused layout uses one toolbar for previous/next navigation, the selected change count, Undo/Redo, synchronized scrolling, and unchanged-region folding. **Compare** contains highlighting, whitespace, and connector options. **Actions** (ellipsis) contains block application, swapping, patch copying, and reverting. **Changes** toggles the sidebar; it starts hidden. Open and Save icons sit in each file header. In three-way merge, Source/Target application and Save/Save & Close sit beside the Result header.
 
 Open **Settings** (gear) to choose **System default**, **English**, or **한국어**, and **Light**, **Dark**, or **System** appearance. Changes apply immediately in Diff and Merge. System language follows the preferred OS language, with English fallback. System appearance follows OS light/dark changes while the app runs. Preferences are saved atomically and restored on the next launch; a missing or invalid settings file uses system defaults. The file is `%LOCALAPPDATA%\rdiff\settings.json` on Windows and `~/Library/Application Support/rdiff/settings.json` on macOS.
+
+**Tab width** in Settings selects 2 or 4 spaces (default: 4). It applies immediately to both comparison views and all three merge panes, including Tab-key indentation, and is restored on the next launch. Existing tab characters are displayed at the selected width and preserved when saving.
 
 `Esc` dismisses an open menu first; otherwise it closes the window, prompting for unsaved changes.
 

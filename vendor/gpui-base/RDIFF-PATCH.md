@@ -15,3 +15,9 @@ Text decorations are composed in deterministic layer order. GPUI's upstream
 colors win over application overrides unpredictably. The ordered composition
 keeps unchanged text neutral while retaining syntax colors inside diff blocks.
 Remove these patches when equivalent upstream behavior is available.
+
+Unwrapped editor lines expand existing tabs using `TabSize::expand_tabs`, shared
+with rdiff's Unified view. The shaped line keeps a source-byte map so caret hit
+testing, selection, decorations, editing, and saving retain document coordinates.
+Horizontal width measurement includes expanded tabs and keys its cache by tab
+size. Tab-key indentation continues to use the upstream `set_tab_size` API.

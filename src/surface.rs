@@ -170,8 +170,10 @@ impl DiffSurface {
         let mut observers = Vec::new();
         let mut highlights = Vec::new();
         let central_numbers = editors.len() == 2;
+        let tab_size = cx.global::<settings::Preferences>().editor_tab_size();
         for editor in &editors {
             editor.update(cx, |state, cx| {
+                state.set_tab_size(tab_size, cx);
                 state.set_soft_wrap(false, window, cx);
                 state.set_scroll_bounce(false, cx);
                 if central_numbers {
@@ -200,6 +202,13 @@ impl DiffSurface {
                 });
             }));
         }
+        observers.push(cx.observe_global::<settings::Preferences>(|this, cx| {
+            let tab_size = cx.global::<settings::Preferences>().editor_tab_size();
+            for editor in &this.editors {
+                editor.update(cx, |state, cx| state.set_tab_size(tab_size, cx));
+            }
+            cx.notify();
+        }));
         let count = editors.len();
         Self {
             editors,

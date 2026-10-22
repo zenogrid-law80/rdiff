@@ -3,6 +3,7 @@ use gpui_kit::{
     component::{
         Icon, Selectable, Sizable,
         button::{Button, ButtonVariants},
+        input::TabSize,
         popover::Popover,
         theme::{Theme, ThemeMode},
     },
@@ -36,11 +37,44 @@ pub enum Appearance {
     System,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Preferences {
     pub language: Language,
     pub theme: Appearance,
+    #[serde(deserialize_with = "deserialize_tab_size")]
+    pub tab_size: usize,
+}
+
+impl Default for Preferences {
+    fn default() -> Self {
+        Self {
+            language: Language::default(),
+            theme: Appearance::default(),
+            tab_size: 4,
+        }
+    }
+}
+
+impl Preferences {
+    pub fn editor_tab_size(&self) -> TabSize {
+        TabSize {
+            tab_size: self.tab_size,
+            ..Default::default()
+        }
+    }
+}
+
+fn deserialize_tab_size<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<usize, D::Error> {
+    let size = usize::deserialize(deserializer)?;
+    match size {
+        2 | 4 => Ok(size),
+        // Restore the default for the removed option without resetting other preferences.
+        8 => Ok(4),
+        _ => Err(serde::de::Error::custom("tab_size must be 2 or 4")),
+    }
 }
 impl Global for Preferences {}
 
@@ -239,6 +273,18 @@ impl Render for SettingsPanel {
                     }),
                 ),
             )
+            .child(div().text_sm().child(tr("Tab width")))
+            .child(div().flex().gap_1().children([2, 4].map(|size| {
+                Button::new(("tab-size", size))
+                    .small()
+                    .ghost()
+                    .label(size.to_string())
+                    .accessibility_label(format!("{}: {size}", tr("Tab width")))
+                    .selected(preferences.tab_size == size)
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.change(|preferences| preferences.tab_size = size, cx)
+                    }))
+            })))
             .child(div().h(px(1.)).bg(rgb(color(0x393b40))))
             .child(self.updater.clone())
             .children(self.error.as_ref().map(|error| {
@@ -265,6 +311,7 @@ mod tests {
             let preferences = Preferences {
                 language: Language::Ko,
                 theme,
+                ..Default::default()
             };
             save_to(&path, &preferences).unwrap();
             assert_eq!(
@@ -273,5 +320,43 @@ mod tests {
             );
         }
         assert!(serde_json::from_str::<Preferences>(r#"{"theme":"invalid"}"#).is_err());
+    }
+
+    #[test]
+    fn old_settings_keep_language_and_theme_with_default_tab_width() {
+        let preferences: Preferences =
+            serde_json::from_str(r#"{"language":"ko","theme":"dark"}"#).unwrap();
+        assert_eq!(preferences.language, Language::Ko);
+        assert_eq!(preferences.theme, Appearance::Dark);
+        assert_eq!(preferences.tab_size, 4);
+    }
+
+    #[test]
+    fn tab_width_is_saved_and_validated() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("settings.json");
+        for tab_size in [2, 4] {
+            let preferences = Preferences {
+                tab_size,
+                ..Default::default()
+            };
+            save_to(&path, &preferences).unwrap();
+            let restored: Preferences =
+                serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+            assert_eq!(restored, preferences);
+            let tab = restored.editor_tab_size();
+            assert_eq!(tab.tab_size, tab_size);
+            assert!(!tab.hard_tabs);
+        }
+        let restored: Preferences =
+            serde_json::from_str(r#"{"language":"ko","theme":"dark","tab_size":8}"#).unwrap();
+        assert_eq!(restored.tab_size, 4);
+        assert_eq!(restored.language, Language::Ko);
+        assert_eq!(restored.theme, Appearance::Dark);
+        for value in ["0", "1", "3", "16", "-1", "null", "\"4\""] {
+            assert!(
+                serde_json::from_str::<Preferences>(&format!(r#"{{"tab_size":{value}}}"#)).is_err()
+            );
+        }
     }
 }

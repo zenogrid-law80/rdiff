@@ -27,6 +27,22 @@ impl Default for TabSize {
 }
 
 impl TabSize {
+    /// Expand tabs for display, returning source-byte to display-byte offsets.
+    /// The source document and its UTF-8 coordinates remain unchanged.
+    pub fn expand_tabs(&self, text: &str) -> (String, Vec<usize>) {
+        let width = self.tab_size.max(1);
+        let mut extra = 0;
+        let mut offsets = Vec::with_capacity(text.len() + 1);
+        for (index, byte) in text.bytes().enumerate() {
+            offsets.push(index + extra);
+            if byte == b'\t' {
+                extra += width - 1;
+            }
+        }
+        offsets.push(text.len() + extra);
+        (text.replace('\t', &" ".repeat(width)), offsets)
+    }
+
     pub(super) fn to_string(&self) -> SharedString {
         if self.hard_tabs {
             "\t".into()

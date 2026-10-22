@@ -111,6 +111,7 @@ pub(super) struct LongestLineKey {
     font: gpui::Font,
     text_size: Pixels,
     wrap_width: Option<Pixels>,
+    tab_size: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -2114,7 +2115,8 @@ impl<M: InputModeKind> TextElement<M> {
 
             debug_assert_eq!(line_item.len(), line_text.len());
 
-            let mut wrapped_lines: SmallVec<[ShapedLine; 1]> = SmallVec::with_capacity(1);
+            let mut wrapped_lines: SmallVec<[crate::input::display_map::InputLine; 1]> =
+                SmallVec::with_capacity(1);
             let mut line_has_background = false;
 
             for range in &line_item.wrapped_lines {
@@ -2132,12 +2134,38 @@ impl<M: InputModeKind> TextElement<M> {
                 let sub_line: SharedString = line_text[range.clone()].to_string().into();
                 let line_runs =
                     align_runs_to_char_boundaries(&sub_line, &line_runs).unwrap_or(line_runs);
-                let shaped_line = window
-                    .text_system()
-                    .shape_line(sub_line, font_size, &line_runs, None);
-
                 line_has_background |= has_background(&line_runs);
-                wrapped_lines.push(shaped_line);
+                if last_layout.wrap_width.is_none() && sub_line.contains('\t') {
+                    let (expanded, offsets) = state.mode.tab_size().expand_tabs(&sub_line);
+                    let mut offset = 0;
+                    let expanded_runs: Vec<_> = line_runs
+                        .iter()
+                        .map(|run| {
+                            let mut expanded_run = run.clone();
+                            expanded_run.len = offsets[offset + run.len] - offsets[offset];
+                            offset += run.len;
+                            expanded_run
+                        })
+                        .collect();
+                    let shaped_line = window.text_system().shape_line(
+                        expanded.into(),
+                        font_size,
+                        &expanded_runs,
+                        None,
+                    );
+                    wrapped_lines.push(crate::input::display_map::InputLine::expanded_tabs(
+                        sub_line,
+                        shaped_line,
+                        offsets,
+                    ));
+                } else {
+                    wrapped_lines.push(
+                        window
+                            .text_system()
+                            .shape_line(sub_line, font_size, &line_runs, None)
+                            .into(),
+                    );
+                }
             }
 
             // Use the first visual line's indentation width for continuation lines.
@@ -2153,7 +2181,7 @@ impl<M: InputModeKind> TextElement<M> {
             };
 
             let line_layout = LineLayout::new()
-                .lines(wrapped_lines)
+                .inline_lines(wrapped_lines)
                 .wrap_indent(wrap_indent)
                 .with_background(line_has_background)
                 .with_whitespaces(whitespace_indicators.clone());
@@ -2805,6 +2833,7 @@ impl<M: InputModeKind> Element for TextElement<M> {
                 font: style.font(),
                 text_size,
                 wrap_width,
+                tab_size: state.mode.tab_size().tab_size,
             };
             let cached = state
                 .longest_line_width
@@ -2813,7 +2842,13 @@ impl<M: InputModeKind> Element for TextElement<M> {
             longest_line_width = match cached {
                 Some((_, width)) => width,
                 None => {
-                    let longest_line: SharedString = longest_line.to_string().into();
+                    let longest_line = longest_line.to_string();
+                    let longest_line: SharedString =
+                        if !state.is_single_line() && longest_line.contains('\t') {
+                            state.mode.tab_size().expand_tabs(&longest_line).0.into()
+                        } else {
+                            longest_line.into()
+                        };
                     window
                         .text_system()
                         .shape_line(
@@ -2845,6 +2880,13 @@ impl<M: InputModeKind> Element for TextElement<M> {
                     .as_ref()
                     .map_or(px(0.), |cache| cache.unwrapped_width)
             };
+        }
+        if !state.soft_wrap && !state.is_single_line() {
+            // A tab-heavy row can be wider than the row with the most source bytes.
+            longest_line_width = lines
+                .iter()
+                .map(|line| line.longest_width)
+                .fold(longest_line_width, Pixels::max);
         }
         last_layout.lines = Rc::new(lines);
 

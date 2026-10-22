@@ -1,4 +1,4 @@
-//! A visual row whose offsets remain in source UTF-8 bytes.
+// A visual row whose offsets remain in source UTF-8 bytes.
 use gpui::{App, Pixels, Point, ShapedLine, SharedString, TextAlign, Window, point, px};
 use std::ops::Range;
 
@@ -16,10 +16,14 @@ pub(crate) struct InputLine {
     content: Content,
 }
 // Keep the ordinary shaped row inline: boxing it would add an allocation to
-// every existing plain-text row. Only token rows allocate fragment storage.
+// every existing plain-text row. Token and tab rows allocate coordinate maps.
 #[allow(clippy::large_enum_variant)]
 enum Content {
     Text(ShapedLine),
+    Tabs {
+        line: ShapedLine,
+        offsets: Vec<usize>,
+    },
     Inline(Vec<InlineFragment>),
 }
 impl From<ShapedLine> for InputLine {
@@ -33,6 +37,19 @@ impl From<ShapedLine> for InputLine {
     }
 }
 impl InputLine {
+    pub(crate) fn expanded_tabs(
+        source: SharedString,
+        line: ShapedLine,
+        offsets: Vec<usize>,
+    ) -> Self {
+        Self {
+            len: source.len(),
+            width: line.width,
+            text: source,
+            content: Content::Tabs { line, offsets },
+        }
+    }
+
     pub(crate) fn inline(text: SharedString, fragments: Vec<InlineFragment>) -> Self {
         let width = fragments.last().map_or(px(0.), |f| f.x + f.width);
         Self {
@@ -45,6 +62,7 @@ impl InputLine {
     pub(crate) fn x_for_index(&self, ix: usize) -> Pixels {
         match &self.content {
             Content::Text(line) => line.x_for_index(ix),
+            Content::Tabs { line, offsets } => line.x_for_index(offsets[ix.min(self.len)]),
             Content::Inline(fragments) => {
                 for f in fragments {
                     if ix < f.range.end {
@@ -62,6 +80,20 @@ impl InputLine {
     pub(crate) fn closest_index_for_x(&self, x: Pixels) -> usize {
         match &self.content {
             Content::Text(line) => line.closest_index_for_x(x),
+            Content::Tabs { line, offsets } => {
+                let display_index = line.closest_index_for_x(x);
+                match offsets.binary_search(&display_index) {
+                    Ok(index) => index,
+                    Err(after) => {
+                        let before = after.saturating_sub(1);
+                        let after = after.min(self.len);
+                        let midpoint = (line.x_for_index(offsets[before])
+                            + line.x_for_index(offsets[after]))
+                            / 2.;
+                        if x < midpoint { before } else { after }
+                    }
+                }
+            }
             Content::Inline(fragments) => {
                 for f in fragments {
                     if x <= f.x + f.width {
@@ -82,6 +114,9 @@ impl InputLine {
     pub(crate) fn index_for_x(&self, x: Pixels) -> Option<usize> {
         match &self.content {
             Content::Text(line) => line.index_for_x(x),
+            Content::Tabs { .. } => {
+                (x >= px(0.) && x <= self.width).then(|| self.closest_index_for_x(x))
+            }
             Content::Inline(_) => {
                 (x >= px(0.) && x <= self.width).then(|| self.closest_index_for_x(x))
             }
@@ -130,7 +165,9 @@ impl InputLine {
             }
         };
         match &self.content {
-            Content::Text(line) => paint(line, pos, align, width, window, cx),
+            Content::Text(line) | Content::Tabs { line, .. } => {
+                paint(line, pos, align, width, window, cx)
+            }
             Content::Inline(fragments) => {
                 let remaining = (width.unwrap_or(self.width) - self.width).max(px(0.));
                 let offset = match align {

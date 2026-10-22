@@ -974,6 +974,7 @@ impl DiffApp {
                 .into_any_element();
         }
         let comparison = self.comparison.clone();
+        let tab_size = cx.global::<settings::Preferences>().editor_tab_size();
         let rows = self.display_rows.clone();
         let unified = self.unified;
         let selected_source = self.selected.map(|index| self.comparison.hunks[index]);
@@ -991,7 +992,7 @@ impl DiffApp {
             .iter()
             .flat_map(|row| [&row.left, &row.right])
             .filter_map(|line| line.as_ref())
-            .map(|line| line.text.len() + line.text.matches('\t').count() * 3)
+            .map(|line| line.text.len() + line.text.matches('\t').count() * (tab_size.tab_size - 1))
             .max()
             .unwrap_or(0) as f32
             * 8.
@@ -1028,6 +1029,7 @@ impl DiffApp {
                                 width: column_width,
                                 content_width,
                                 offset: horizontal[side],
+                                tab_size,
                             },
                         )
                         .on_scroll_wheel(move |event, _, cx| {
@@ -1134,6 +1136,7 @@ struct CellStyle {
     width: f32,
     content_width: f32,
     offset: f32,
+    tab_size: gpui_kit::component::input::TabSize,
 }
 
 fn code_cell(line: Option<&Line>, spans: &[Range<usize>], style: CellStyle) -> Div {
@@ -1145,6 +1148,7 @@ fn code_cell(line: Option<&Line>, spans: &[Range<usize>], style: CellStyle) -> D
         width,
         content_width,
         offset,
+        tab_size,
     } = style;
     let has_change = changed && line.is_some();
     let background = if has_change {
@@ -1163,16 +1167,8 @@ fn code_cell(line: Option<&Line>, spans: &[Range<usize>], style: CellStyle) -> D
     let mut text = String::new();
     let mut highlights = Vec::new();
     if let Some(line) = line {
-        let mut positions = vec![0; line.text.len() + 1];
-        for (index, ch) in line.text.char_indices() {
-            positions[index] = text.len();
-            if ch == '\t' {
-                text.push_str("    ");
-            } else {
-                text.push(ch);
-            }
-        }
-        positions[line.text.len()] = text.len();
+        let (expanded, positions) = tab_size.expand_tabs(&line.text);
+        text = expanded;
         highlights = spans
             .iter()
             .filter(|range| !range.is_empty())
