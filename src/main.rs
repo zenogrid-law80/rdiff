@@ -1,8 +1,11 @@
+mod assets;
 mod cli;
 mod diff;
 mod folding;
+mod i18n;
 mod merge;
 mod merge_ui;
+mod settings;
 mod surface;
 mod ui;
 mod update;
@@ -34,4 +37,12 @@ fn main() -> std::process::ExitCode {
             std::process::ExitCode::from(2)
         }
     }
+}
+
+// Exercise the exact vendored overlay implementation in the application test
+// suite without requiring the vendor's optional platform test dependencies.
+#[cfg(test)]
+mod decoration_regression {
+    use gpui_kit as gpui;
+    include!("../vendor/gpui-base/src/input/base/decoration_composition.rs");
 }

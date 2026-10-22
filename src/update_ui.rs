@@ -1,3 +1,4 @@
+use crate::i18n::tr;
 use crate::update::{self, Available};
 use gpui_kit::{
     component::{
@@ -51,7 +52,15 @@ impl UpdateControl {
                 Some(release) => update::install(&release).map(|message| (None, message)),
                 None => update::check().map(|release| {
                     let message = match &release {
-                        Some(r) => format!("v{} available · Click Install update. Open documents stay unchanged; applies on next launch.", r.version),
+                        Some(r) => format!(
+                            "Update available: v{} · {}",
+                            r.version,
+                            if r.is_msi() {
+                                "Save and close all windows to install the MSI update."
+                            } else {
+                                "Open documents stay unchanged; applies on next launch."
+                            }
+                        ),
                         None => format!("rdiff v{} is up to date", update::VERSION),
                     };
                     (release, message)
@@ -86,7 +95,7 @@ impl Render for UpdateControl {
         Button::new("github-update")
             .small()
             .ghost()
-            .label(if self.busy {
+            .label(tr(if self.busy {
                 "Updating…".to_owned()
             } else if self.failed {
                 "Update failed · Retry".into()
@@ -100,8 +109,8 @@ impl Render for UpdateControl {
                 format!("Install v{}", release.version)
             } else {
                 format!("v{} · Check updates", update::VERSION)
-            })
-            .tooltip(self.message.clone())
+            }))
+            .tooltip(tr(&self.message))
             .disabled(self.busy || self.installed)
             .on_click(cx.listener(|this, _, _, cx| this.activate(cx)))
     }

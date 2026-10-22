@@ -5245,7 +5245,7 @@ dependencies = [
 
 [[package]]
 name = "ridff-tools"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "embed-resource",
  "gpui-kit",

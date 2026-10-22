@@ -1,14 +1,16 @@
 //! Shared document-coordinate diff surface. The editors keep their real text;
 //! connectors and scroll anchors never introduce padding into saved documents.
 use crate::folding::{EqualFold, equal_folds};
+use crate::{i18n::tr, settings};
 use gpui_kit::component::{
     Disableable, Sizable,
     button::{Button, ButtonVariants},
     input::{Editor, EditorState, FoldRange, RopeExt, TextDecoration, TextDecorationCollection},
 };
+use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use std::time::Duration;
-use std::{cell::Cell, collections::HashSet, ops::Range, rc::Rc};
+use std::{cell::Cell, collections::HashSet, ops::Range, path::PathBuf, rc::Rc};
 
 pub const BACKGROUND: u32 = 0x1e1f22;
 pub const PANEL: u32 = 0x2b2d30;
@@ -49,7 +51,7 @@ pub fn line_ending_badge(text: &str) -> impl IntoElement + use<> {
         .flex_shrink_0()
         .px_2()
         .text_xs()
-        .text_color(rgb(0x92979f))
+        .text_color(rgb(settings::color(0x92979f)))
         .child(line_ending(text))
 }
 
@@ -93,13 +95,15 @@ pub fn configure_theme(cx: &mut App) {
     gpui_kit::component::theme::Theme::update(cx, |theme| {
         theme.mono_font_family = "Cascadia Mono".into();
         theme.mono_font_size = px(13.);
+        theme.popover = rgb(settings::color(PANEL)).into();
+        theme.popover_foreground = rgb(settings::color(0xd6dfeb)).into();
         let style = &mut std::sync::Arc::make_mut(&mut theme.highlight_theme).style;
-        style.editor_background = Some(rgb(BACKGROUND).into());
-        style.editor_gutter_background = Some(rgb(BACKGROUND).into());
-        style.editor_foreground = Some(rgb(0xbcbec4).into());
-        style.editor_active_line = Some(rgb(0x26282e).into());
-        style.editor_line_number = Some(rgb(0x606366).into());
-        style.editor_active_line_number = Some(rgb(0xa4a7ad).into());
+        style.editor_background = Some(rgb(settings::color(BACKGROUND)).into());
+        style.editor_gutter_background = Some(rgb(settings::color(BACKGROUND)).into());
+        style.editor_foreground = Some(rgb(settings::color(0xbcbec4)).into());
+        style.editor_active_line = Some(rgb(settings::color(BACKGROUND)).into());
+        style.editor_line_number = Some(rgb(settings::color(0x606366)).into());
+        style.editor_active_line_number = Some(rgb(settings::color(0xa4a7ad)).into());
     });
 }
 
@@ -137,6 +141,7 @@ pub struct Change {
 pub enum SurfaceEvent {
     Apply { index: usize, source: usize },
     Select(usize),
+    DropFiles { pane: usize, paths: Vec<PathBuf> },
 }
 
 pub struct DiffSurface {
@@ -145,6 +150,8 @@ pub struct DiffSurface {
     changes: Vec<Change>,
     selected: Option<usize>,
     highlights: Vec<TextDecorationCollection>,
+    inline: Vec<Vec<Range<usize>>>,
+    last_dark: bool,
     pub sync_scroll: bool,
     pub curved: bool,
     pub highlighting: bool,
@@ -212,6 +219,8 @@ impl DiffSurface {
             changes: Vec::new(),
             selected: None,
             highlights,
+            inline: Vec::new(),
+            last_dark: settings::dark(),
             sync_scroll: true,
             curved: true,
             highlighting: true,
@@ -248,7 +257,7 @@ impl DiffSurface {
             .max()
             .unwrap_or(1);
         let digits = lines.ilog10() + 1;
-        let number_width = (12. + digits as f32 * 8.).max(52.);
+        let number_width = (8. + digits as f32 * 8.).max(32.);
         px(ACTION_WIDTH + number_width * 2. + CONNECTOR_WIDTH)
     }
 
@@ -274,27 +283,48 @@ impl DiffSurface {
                 cache.right = result.clone();
             }
         }
-        for (pane, collection) in self.highlights.iter().enumerate() {
-            collection.set(
-                inline
-                    .get(pane)
-                    .into_iter()
-                    .flatten()
-                    .map(|range| {
-                        TextDecoration::new(
-                            range.clone(),
-                            HighlightStyle {
-                                background_color: Some(rgb(0x365880).into()),
-                                ..Default::default()
-                            },
-                        )
-                    })
-                    .collect(),
-                cx,
-            );
-        }
+        self.inline = inline;
+        self.refresh_decorations(cx);
         self.rebuild_folds(cx);
         cx.notify();
+    }
+
+    fn refresh_decorations(&mut self, cx: &mut Context<Self>) {
+        self.last_dark = settings::dark();
+        let foreground = rgb(settings::color(0xbcbec4)).into();
+        for (pane, collection) in self.highlights.iter().enumerate() {
+            let mut decorations: Vec<_> = unchanged_ranges(
+                self.editors[pane].read(cx).text().len(),
+                self.changes
+                    .iter()
+                    .filter(|_| self.highlighting)
+                    .map(|change| change.ranges[pane].clone()),
+            )
+            .into_iter()
+            .map(|range| {
+                TextDecoration::new(
+                    range,
+                    HighlightStyle {
+                        color: Some(foreground),
+                        font_weight: Some(FontWeight::NORMAL),
+                        font_style: Some(FontStyle::Normal),
+                        ..Default::default()
+                    },
+                )
+            })
+            .collect();
+            decorations.extend(self.inline.get(pane).into_iter().flatten().map(|range| {
+                TextDecoration::new(
+                    range.clone(),
+                    HighlightStyle {
+                        background_color: Some(rgb(settings::color(0x365880)).into()),
+                        ..Default::default()
+                    },
+                )
+            }));
+            decorations.sort_by_key(|decoration| (decoration.range.start, decoration.range.end));
+            collection.set(decorations, cx);
+        }
     }
 
     pub fn toggle_unchanged(&mut self, cx: &mut Context<Self>) {
@@ -519,7 +549,7 @@ impl DiffSurface {
                     .bordered(false)
                     .readonly(self.readonly[index])
                     .disabled(self.disabled)
-                    .aria_label(if self.editors.len() == 2 {
+                    .aria_label(tr(if self.editors.len() == 2 {
                         if index == 0 {
                             "Original text"
                         } else {
@@ -531,7 +561,7 @@ impl DiffSurface {
                             1 => "Result",
                             _ => "Target",
                         }
-                    }),
+                    })),
             )
             .child(
                 canvas(
@@ -549,7 +579,7 @@ impl DiffSurface {
                             for change in &changes {
                                 let (top, bottom) = span_y(state, &change.ranges[index]);
                                 let active = selected == Some(change.id);
-                                let color = rgb(change.color);
+                                let color = rgb(settings::color(change.color));
                                 if highlighting {
                                     let rectangle = Bounds::from_corners(
                                         point(bounds.left(), top),
@@ -601,7 +631,7 @@ impl DiffSurface {
                     .top(y)
                     .w_full()
                     .h(h)
-                    .bg(rgb(BACKGROUND))
+                    .bg(rgb(settings::color(BACKGROUND)))
                     .cursor_pointer()
                     .overflow_hidden()
                     .on_mouse_down(
@@ -635,7 +665,19 @@ impl DiffSurface {
         // Reserve a separate lane so clicking a change never intercepts the
         // editor's scrollbar thumb or covers text. The two outer lanes mirror
         // one another, keeping the line numbers and merge actions in the middle.
-        let pane = div().flex().flex_1().min_w_0().h_full();
+        let pane = div()
+            .flex()
+            .flex_1()
+            .min_w_0()
+            .h_full()
+            .when(self.editors.len() == 2, |pane| {
+                pane.on_drop(cx.listener(move |_, files: &ExternalPaths, _, cx| {
+                    cx.emit(SurfaceEvent::DropFiles {
+                        pane: index,
+                        paths: files.paths().to_vec(),
+                    });
+                }))
+            });
         if index == 0 {
             pane.child(self.overview(index, cx)).child(content)
         } else {
@@ -654,7 +696,7 @@ impl DiffSurface {
             .w(px(OVERVIEW_WIDTH))
             .flex_shrink_0()
             .h_full()
-            .bg(rgb(0x242629))
+            .bg(rgb(settings::color(0x242629)))
             .cursor_pointer()
             .on_mouse_down(
                 MouseButton::Left,
@@ -707,7 +749,7 @@ impl DiffSurface {
                                         bounds.top() + bounds.size.height * bottom,
                                     ),
                                 ),
-                                rgb(0x7a7e85).opacity(0.25),
+                                rgb(settings::color(0x7a7e85)).opacity(0.25),
                             ));
                             // Draw the selected marker last so small adjacent
                             // changes cannot obscure its outline.
@@ -730,7 +772,7 @@ impl DiffSurface {
                                 );
                                 window.paint_quad(fill(
                                     rectangle,
-                                    rgb(change.color).opacity(if active {
+                                    rgb(settings::color(change.color)).opacity(if active {
                                         1.
                                     } else if change.resolved {
                                         0.45
@@ -745,7 +787,7 @@ impl DiffSurface {
                                                 point(rectangle.left(), y),
                                                 size(rectangle.size.width, px(1.)),
                                             ),
-                                            rgb(0xd2d6dc).opacity(0.85),
+                                            rgb(settings::color(0xd2d6dc)).opacity(0.85),
                                         ));
                                     }
                                 }
@@ -787,9 +829,9 @@ impl DiffSurface {
             .h_full()
             .flex_shrink_0()
             .overflow_hidden()
-            .bg(rgb(BACKGROUND))
+            .bg(rgb(settings::color(BACKGROUND)))
             .border_x_1()
-            .border_color(rgb(BORDER))
+            .border_color(rgb(settings::color(BORDER)))
             .child(
                 canvas(
                     move |bounds, window, _| {
@@ -846,11 +888,13 @@ impl DiffSurface {
                                 if let Ok(path) = path.build() {
                                     window.paint_path(
                                         path,
-                                        rgb(change.color).opacity(if selected == Some(change.id) {
-                                            0.38
-                                        } else {
-                                            0.23
-                                        }),
+                                        rgb(settings::color(change.color)).opacity(
+                                            if selected == Some(change.id) {
+                                                0.38
+                                            } else {
+                                                0.23
+                                            },
+                                        ),
                                     );
                                 }
                             }
@@ -910,13 +954,13 @@ impl DiffSurface {
                             .w(px(24.))
                             .h(px(20.))
                             .child(merge_chevrons(source == 2))
-                            .tooltip(if change.resolved && three_way {
+                            .tooltip(tr(if change.resolved && three_way {
                                 "Replace the resolved block with this side again"
                             } else if source == 2 {
                                 "Apply this Target block to Result"
                             } else {
                                 "Apply this block to the right"
-                            })
+                            }))
                             .disabled(self.disabled)
                             .on_click(cx.listener(move |_, _, _, cx| {
                                 cx.emit(SurfaceEvent::Apply { index: id, source })
@@ -966,7 +1010,7 @@ fn paint_line_numbers(
             &[TextRun {
                 len: text.len(),
                 font: font("Cascadia Mono"),
-                color: rgb(if active { 0xa4a7ad } else { 0x606a79 }).into(),
+                color: rgb(settings::color(if active { 0xa4a7ad } else { 0x606a79 })).into(),
                 background_color: None,
                 underline: None,
                 strikethrough: None,
@@ -985,7 +1029,7 @@ fn paint_line_numbers(
 }
 
 /// Font-independent, thin double chevron matching the editor gutter controls.
-fn merge_chevrons(left: bool) -> impl IntoElement {
+pub fn merge_chevrons(left: bool) -> impl IntoElement {
     canvas(
         |_, _, _| (),
         move |bounds, _, window, _| {
@@ -1038,13 +1082,20 @@ fn paint_fold_wave(
         }
     }
     if let Ok(path) = path.build() {
-        window.paint_path(path, rgb(0x55585e));
+        window.paint_path(path, rgb(settings::color(0x55585e)));
     }
 }
 
 impl Render for DiffSurface {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let mut row = div().flex().size_full().min_h_0().bg(rgb(BACKGROUND));
+        if self.last_dark != settings::dark() {
+            self.refresh_decorations(cx);
+        }
+        let mut row = div()
+            .flex()
+            .size_full()
+            .min_h_0()
+            .bg(rgb(settings::color(BACKGROUND)));
         for index in 0..self.editors.len() {
             if index > 0 {
                 row = row.child(self.gutter(index - 1, cx));
@@ -1053,6 +1104,31 @@ impl Render for DiffSurface {
         }
         row
     }
+}
+
+// Complement of displayed diff bytes: empty insertion anchors do not claim text.
+fn unchanged_ranges(
+    len: usize,
+    changes: impl IntoIterator<Item = Range<usize>>,
+) -> Vec<Range<usize>> {
+    let mut changes: Vec<_> = changes
+        .into_iter()
+        .map(|range| range.start.min(len)..range.end.min(len))
+        .filter(|range| !range.is_empty())
+        .collect();
+    changes.sort_by_key(|range| (range.start, range.end));
+    let mut result = Vec::new();
+    let mut end = 0;
+    for change in changes {
+        if end < change.start {
+            result.push(end..change.start);
+        }
+        end = end.max(change.end);
+    }
+    if end < len {
+        result.push(end..len);
+    }
+    result
 }
 
 fn line_at(editor: &EditorState, byte: usize) -> usize {
@@ -1226,5 +1302,20 @@ mod tests {
         assert_eq!(map_line(0., &anchors), 0.);
         assert_eq!(map_line(2., &anchors), 3.);
         assert_eq!(map_line(3.5, &anchors), 4.5);
+    }
+}
+
+#[cfg(test)]
+mod neutral_tests {
+    use super::unchanged_ranges;
+    #[test]
+    fn excludes_only_changed_bytes_and_preserves_empty_anchors() {
+        assert_eq!(
+            unchanged_ranges(12, [4..8, 6..10, 2..2]),
+            vec![0..4, 10..12]
+        );
+        assert_eq!(unchanged_ranges(4, [0..0, 4..4]), vec![0..4]);
+        assert!(unchanged_ranges(4, std::iter::once(0..12)).is_empty());
+        assert!(unchanged_ranges(0, std::iter::once(0..0)).is_empty());
     }
 }

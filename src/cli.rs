@@ -4,7 +4,7 @@ use std::{ffi::OsString, path::PathBuf};
 pub const USAGE: &str = "rdiff — text comparison and three-way merge
 
 Usage:
-  rdiff                                  Open the diff demo
+  rdiff                                  Open an empty diff window
   rdiff diff <file1> <file2>               Compare two files
   rdiff merge <source> <target> <base> <result>
   rdiff <file1> <file2>                    Compare two files (legacy)

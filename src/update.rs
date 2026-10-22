@@ -33,6 +33,12 @@ pub struct Available {
     msi: bool,
 }
 
+impl Available {
+    pub fn is_msi(&self) -> bool {
+        self.msi
+    }
+}
+
 #[cfg(test)]
 fn select(json: &[u8], current: &str) -> Result<Option<Available>, String> {
     select_kind(json, current, false)

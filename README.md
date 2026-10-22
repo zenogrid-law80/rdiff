@@ -14,7 +14,7 @@ For MSI installations, self-update downloads and verifies the new MSI, then wait
 
 The original v0.1.1 updater only replaces the executable. Install the v0.1.3 or later MSI once to enable MSI-based updates for subsequent releases. Version 0.1.3 also removes a PowerShell module dependency that could prevent v0.1.2 MSI updates from completing.
 
-For unattended installation, use `msiexec /i rdiff-0.1.4-windows-x86_64.msi /qn /norestart`.
+For unattended installation, use `msiexec /i rdiff-0.1.5-windows-x86_64.msi /qn /norestart`.
 
 On Apple Silicon Macs running macOS 11 or later, download [rdiff-macos-arm64.dmg](https://github.com/zenogrid-law80/rdiff/releases/latest/download/rdiff-macos-arm64.dmg), open it, and drag **rdiff.app** to **Applications**. Intel Mac builds are not currently provided. The Mac build is ad-hoc signed and has not been notarized by Apple. If macOS blocks the first launch, review the app in **System Settings → Privacy & Security → Open Anyway**. Install Mac updates manually by replacing the app with the latest DMG; the built-in updater currently supports Windows x64 only.
 
@@ -32,11 +32,11 @@ cargo run --bin rdiff -- diff examples/before.rs examples/after.rs
 cargo run --bin rdiff -- merge examples/merge-source.txt examples/merge-target.txt examples/merge-base.txt target/merge-result.txt
 ```
 
-Without arguments, rdiff opens a sample comparison. The legacy `rdiff <file1> <file2>` form is also supported. After building, you can run `target/debug/rdiff.exe` directly. Use `rdiff --help` for command usage.
+Without arguments, rdiff opens an empty comparison window. Use **Open file** to select files to compare. The legacy `rdiff <file1> <file2>` form is also supported. After building, you can run `target/debug/rdiff.exe` directly. Use `rdiff --help` for command usage.
 
 ## GitHub self-update
 
-Click **Check updates** at the bottom of either the Diff or three-way merge window to check the latest stable GitHub Release of `zenogrid-law80/rdiff`. If an update is available, click **Install v…**. The button tooltip shows the result or error details. Updating does not restart the application: unsaved edits remain open, and the new version takes effect on the next launch.
+Open **Settings** (gear) and click **Check updates** in either the Diff or three-way merge window to check the latest stable GitHub Release of `zenogrid-law80/rdiff`. If an update is available, click **Install v…**. The button tooltip shows the result or error details. Updating does not restart the application: unsaved edits remain open, and the new version takes effect on the next launch.
 
 ```powershell
 rdiff self-update --check
@@ -73,18 +73,27 @@ This order follows [P4V's external merge tool argument conventions](https://www.
 
 For a comparison, add `-- diff examples/before.rs examples/after.rs`. For the sample merge with two conflicts, use the merge command shown above; its output path is `target/merge-result.txt`.
 
+## Interface and preferences
+
+The focused layout uses one toolbar for previous/next navigation, the selected change count, Undo/Redo, synchronized scrolling, and unchanged-region folding. **Compare** contains highlighting, whitespace, and connector options. **Actions** (ellipsis) contains block application, swapping, patch copying, and reverting. **Changes** toggles the sidebar; it starts hidden. Open and Save icons sit in each file header. In three-way merge, Source/Target application and Save/Save & Close sit beside the Result header.
+
+Open **Settings** (gear) to choose **System default**, **English**, or **한국어**, and **Light**, **Dark**, or **System** appearance. Changes apply immediately in Diff and Merge. System language follows the preferred OS language, with English fallback. System appearance follows OS light/dark changes while the app runs. Preferences are saved atomically and restored on the next launch; a missing or invalid settings file uses system defaults. The file is `%LOCALAPPDATA%\rdiff\settings.json` on Windows and `~/Library/Application Support/rdiff/settings.json` on macOS.
+
+`Esc` dismisses an open menu first; otherwise it closes the window, prompting for unsaved changes.
+
 ## Comparing and editing
 
 - **Open file** opens the original and modified files independently.
+- Drag a file from your file manager onto the original or modified pane (or its header) to open it there. Drop two files together to open them left to right in the order supplied by your file manager. In Unified view, a single file dropped onto the text opens on the modified side; use the headers to choose a side. Unsaved changes block replacement of that side. If either file cannot be read, both current files are preserved.
 - **Side by side** shows a left pane that accepts block merges but not direct typing, and a directly editable right pane. Typing and pasting trigger comparison while preserving the cursor. `Ctrl+E` focuses the right editor; `Ctrl+Enter` compares again.
 - Both line-number columns appear in the center as **left number | right number**. Each follows its document's scrolling and folding state, with change connectors between them.
 - The central double-chevron button applies its change block from left to right. Left-only text is inserted, right-only text is removed, and replacements use the left text. Other blocks remain unchanged, and comparison refreshes immediately. **Apply >>** applies the selected block.
 - **Alt+Down / Alt+Up** selects the next / previous change. **Alt+Right** applies left to right; **Alt+Left** applies right to left. **<< Apply / Apply >>** performs the same operations. Both directions share undo history with direct edits.
 - **↶ / ↷**, `Ctrl+Z`, and `Ctrl+Shift+Z` or `Ctrl+Y` undo and redo edits and block merges. History retains up to 128 entries and 32 MiB. A new edit after undo clears redo history.
-- **Save left / Save right** saves only that file. **Ctrl+S** saves both modified files. Applying a block changes memory only. Saving preserves each file's original BOM and refuses to overwrite a file changed externally. Each file is saved atomically; a failed save leaves that side marked as modified. Open a file before saving demo edits.
+- **Save left / Save right** saves only that file. **Ctrl+S** saves both modified files. Applying a block changes memory only. Saving preserves each file's original BOM and refuses to overwrite a file changed externally. Each file is saved atomically; a failed save leaves that side marked as modified. Open a file before saving edits.
 - **Revert right** restores the last loaded or saved right-hand text and can itself be undone. Opening a modified side and swapping files are disabled while changes are unsaved. Closing checks both sides for unsaved changes.
 - **Side by side / Unified** switches between the editable split view and a read-only single-column view.
-- **Words / Characters / Lines / No highlighting** cycles through difference highlighting modes. Rust, TOML, JSON, and Markdown syntax highlighting is supported.
+- **Words / Characters / Lines / No highlighting** cycles through difference highlighting modes. Rust, TOML, JSON, and Markdown syntax highlighting appears only inside diff blocks. Unchanged text uses the default foreground and normal font style; the caret line has no separate background fill.
 - **Do not ignore / Trim whitespace / Ignore whitespace** compares all whitespace, ignores whitespace at line edges, or ignores all Unicode whitespace. Source text is preserved.
 - The **Sync scroll** icon links panes using actual line correspondences. Turn it off to navigate independently. Shared context remains aligned even when document lengths differ.
 - The **Collapse unchanged** icon folds long matching sections in split and three-way views, leaving three context lines around changes. Click a thin wavy divider to expand the corresponding section in all panes. Turn the button off to show all text, or on to collapse again. Three-way folding hides only sections identical in all three panes. Line numbers, saving, and merging use the original documents.

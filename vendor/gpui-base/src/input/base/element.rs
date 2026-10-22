@@ -66,31 +66,9 @@ fn displayed_line_number(number: usize) -> usize {
 const FOLD_CHEVRON_RIGHT_SVG: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>"#;
 const FOLD_CHEVRON_DOWN_SVG: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>"#;
 
-fn compose_decorations(
-    mut styles: Vec<(Range<usize>, HighlightStyle)>,
-    decorations: impl IntoIterator<Item = (Range<usize>, HighlightStyle)>,
-    visible_byte_range: Range<usize>,
-) -> Option<Vec<(Range<usize>, HighlightStyle)>> {
-    let mut visible_decorations = decorations
-        .into_iter()
-        .filter_map(|(range, style)| {
-            let range =
-                range.start.max(visible_byte_range.start)..range.end.min(visible_byte_range.end);
-            (!range.is_empty()).then_some((range, style))
-        })
-        .peekable();
-
-    if visible_decorations.peek().is_none() {
-        return (!styles.is_empty()).then_some(styles);
-    }
-    if styles.is_empty() {
-        styles.push((visible_byte_range.clone(), HighlightStyle::default()));
-    }
-
-    // Decorations are application-authored overrides and must win over syntax
-    // and semantic highlighting when both set the same style property.
-    Some(gpui::combine_highlights(styles, visible_decorations).collect())
-}
+#[path = "decoration_composition.rs"]
+mod decoration_composition;
+use decoration_composition::compose_decorations;
 
 fn compose_decoration_collections<'a>(
     mut styles: Vec<(Range<usize>, HighlightStyle)>,
