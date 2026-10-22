@@ -7,6 +7,7 @@ mod merge;
 mod merge_ui;
 mod settings;
 mod surface;
+mod syntax;
 mod ui;
 mod update;
 mod update_ui;

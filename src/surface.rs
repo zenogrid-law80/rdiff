@@ -108,19 +108,7 @@ pub fn configure_theme(cx: &mut App) {
 }
 
 pub fn language(path: &str) -> &'static str {
-    match std::path::Path::new(path)
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase()
-        .as_str()
-    {
-        "rs" => "rust",
-        "toml" => "toml",
-        "json" | "jsonc" => "json",
-        "md" | "markdown" => "markdown",
-        _ => "text",
-    }
+    crate::syntax::language(path)
 }
 
 #[derive(Default)]

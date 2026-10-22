@@ -1,6 +1,6 @@
 [package]
 name = "ridff-tools"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2024"
 autoexamples = false
 description = "A native side-by-side text diff tool built with GPUI Kit"
@@ -12,7 +12,13 @@ name = "rdiff"
 path = "src/main.rs"
 
 [dependencies]
-gpui-kit = { version = "=0.8.0", features = ["tree-sitter-rust", "tree-sitter-toml", "tree-sitter-markdown", "tree-sitter-markdown-inline"] }
+gpui-kit = { version = "=0.8.0", features = ["tree-sitter-languages"] }
+# Upstream query resources omitted by GPUI Kit's default language registrations.
+tree-sitter-c-sharp = "=0.23.5"
+tree-sitter-cmake = "=0.7.5"
+tree-sitter-embedded-template = "=0.23.2"
+tree-sitter-javascript = "=0.23.1"
+tree-sitter-swift = "=0.7.4"
 similar = { version = "=3.2.0", features = ["unicode"] }
 tempfile = "3.27"
 serde = { version = "1", features = ["derive"] }

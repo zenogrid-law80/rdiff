@@ -1043,6 +1043,7 @@ pub fn run(paths: MergePaths) -> u8 {
         .with_assets(crate::assets::AppAssets)
         .run(move |cx| {
             init(cx);
+            crate::syntax::init();
             settings::init(cx);
             let bounds = Bounds::centered(None, size(px(1480.), px(920.)), cx);
             let (_, view) = open_window(

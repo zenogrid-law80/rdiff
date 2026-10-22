@@ -1698,6 +1698,7 @@ pub fn run(paths: Vec<PathBuf>) {
         .with_assets(crate::assets::AppAssets)
         .run(move |cx| {
             init(cx);
+            crate::syntax::init();
             settings::init(cx);
             let bounds = Bounds::centered(None, size(px(1360.), px(860.)), cx);
             let (_, view) = open_window(

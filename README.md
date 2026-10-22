@@ -14,7 +14,7 @@ For MSI installations, self-update downloads and verifies the new MSI, then wait
 
 The original v0.1.1 updater only replaces the executable. Install the v0.1.3 or later MSI once to enable MSI-based updates for subsequent releases. Version 0.1.3 also removes a PowerShell module dependency that could prevent v0.1.2 MSI updates from completing.
 
-For unattended installation, use `msiexec /i rdiff-0.1.5-windows-x86_64.msi /qn /norestart`.
+For unattended installation, use `msiexec /i rdiff-0.1.6-windows-x86_64.msi /qn /norestart`.
 
 On Apple Silicon Macs running macOS 11 or later, download [rdiff-macos-arm64.dmg](https://github.com/zenogrid-law80/rdiff/releases/latest/download/rdiff-macos-arm64.dmg), open it, and drag **rdiff.app** to **Applications**. Intel Mac builds are not currently provided. The Mac build is ad-hoc signed and has not been notarized by Apple. If macOS blocks the first launch, review the app in **System Settings → Privacy & Security → Open Anyway**. Install Mac updates manually by replacing the app with the latest DMG; the built-in updater currently supports Windows x64 only.
 
@@ -105,6 +105,51 @@ Open **Settings** (gear) to choose **System default**, **English**, or **한국�
 - **Copy patch** copies a unified patch with three context lines. It uses exact source text, including whitespace and line-ending changes, regardless of display comparison settings.
 - **Changes** toggles the change list. It is hidden by default to leave more room for editing.
 - Use the mouse wheel to scroll vertically. Horizontal wheel or trackpad gestures, or `Shift+wheel`, scroll the pane under the pointer horizontally. Line numbers and central merge buttons stay fixed.
+
+## Syntax highlighting
+
+Diff and Merge editors include GPUI Kit 0.8.0's complete native Tree-sitter language bundle: 36 language/format entries, plus the Markdown inline subgrammar. Detection uses the filename and extension, case-insensitively; unrecognized files use plain text. HTML, Astro, Svelte, PHP, EJS, ERB, Markdown code fences, and JavaScript documentation also use their bundled embedded-language queries.
+
+| Language / format | Extensions and special filenames |
+| --- | --- |
+| Astro | `.astro` |
+| Bash / shell | `.sh`, `.bash`, `.bashrc`, `.bash_profile`, `.bash_login`, `.bash_logout`, `.bash_aliases`, `.profile` |
+| C | `.c`, `.h` |
+| C++ | `.cpp`, `.cc`, `.cxx`, `.c++`, `.hpp`, `.hh`, `.hxx`, `.h++`, `.ipp`, `.inl`, `.tpp`, `.ixx`, `.cppm` |
+| C# | `.cs`, `.csx` |
+| CMake | `.cmake`, `CMakeLists.txt` |
+| CSS | `.css`, `.scss` |
+| Diff / patch | `.diff`, `.patch` |
+| EJS | `.ejs` |
+| Elixir | `.ex`, `.exs` |
+| ERB | `.erb` |
+| Go | `.go` |
+| GraphQL | `.graphql`, `.graphqls`, `.gql` |
+| HTML | `.html`, `.htm`, `.xhtml`, `.shtml` |
+| Java | `.java` |
+| JavaScript / JSX | `.js`, `.jsx`, `.mjs`, `.cjs` |
+| JSDoc | `.jsdoc`, and documentation inside JavaScript |
+| JSON / JSONC | `.json`, `.jsonc` |
+| Kotlin | `.kt`, `.kts`, `.ktm` |
+| Lua | `.lua` |
+| Make | `.mk`, `.mak`, `.make`, `Makefile`, `GNUmakefile`, `BSDmakefile` |
+| Markdown | `.md`, `.markdown`, `.mdown`, `.mkd`, `.mkdn`, `.mdx` |
+| PHP | `.php`, `.php3`, `.php4`, `.php5`, `.php7`, `.php8`, `.phtml` |
+| Protocol Buffers | `.proto` |
+| Python | `.py`, `.pyw`, `.pyi` |
+| Ruby | `.rb`, `.rake`, `.gemspec`, `.ru`, `Gemfile`, `Rakefile`, `Guardfile`, `Podfile`, `Vagrantfile`, `Brewfile`, `.irbrc`, `.pryrc` |
+| Rust | `.rs` |
+| Scala | `.scala`, `.sc` |
+| SQL | `.sql`, `.ddl`, `.dml` |
+| Svelte | `.svelte` |
+| Swift | `.swift` |
+| TOML | `.toml`, `Cargo.lock`, `poetry.lock`, `uv.lock`, `Pipfile` |
+| TypeScript | `.ts`, `.mts`, `.cts` |
+| TypeScript JSX | `.tsx` |
+| YAML | `.yaml`, `.yml`, `.clang-format`, `.clang-tidy` |
+| Zig | `.zig`, `.zon` |
+
+SCSS and MDX use the CSS and Markdown grammars, respectively. C/C++ headers ending in `.h` use the C grammar. Supplemental queries fill the bundle's missing C#, CMake, Swift, GraphQL, and Protocol Buffers rules, add common C token colors to C++, and complete JSX/TSX highlighting. ERB uses Ruby for its embedded code.
 
 ## Comparison behavior and limits
 
