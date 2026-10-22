@@ -4,26 +4,37 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 export MACOSX_DEPLOYMENT_TARGET=11.0
 target=aarch64-apple-darwin
-version=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"] == "ridff-tools"))')
+package_info=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; p = next(p for p in json.load(sys.stdin)["packages"] if p["name"] == "ridff-tools"); print(p["version"], p["id"])')
+read -r version package_id <<< "$package_info"
 if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     echo "Cargo.toml must contain a stable version" >&2
     exit 1
 fi
 
-cargo build --release --locked --bin rdiff --target "$target"
-build_root="$PWD/target/macos-package"
+# The build script renders the same SVG used by the website and Windows app.
+iconset=$(cargo build --release --locked --bin rdiff --target "$target" --message-format=json-render-diagnostics | python3 -c '
+import json, pathlib, sys
+out_dirs = [
+    message["out_dir"]
+    for line in sys.stdin
+    if (message := json.loads(line)).get("reason") == "build-script-executed"
+    and message["package_id"] == sys.argv[1]
+]
+if len(out_dirs) != 1:
+    sys.exit("Cannot locate application icon build output")
+print(pathlib.Path(out_dirs[0]) / "rdiff.iconset")
+' "$package_id")
 output="$PWD/target/release-assets"
 stage=$(mktemp -d "$PWD/target/rdiff-dmg.XXXXXX")
 trap 'rm -rf "$stage"' EXIT
 app="$stage/rdiff.app"
-mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$build_root" "$output"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$output"
 cp "target/$target/release/rdiff" "$app/Contents/MacOS/rdiff"
 chmod 755 "$app/Contents/MacOS/rdiff"
 cp LICENSE "$app/Contents/Resources/LICENSE.txt"
 cp vendor/gpui-base/LICENSE-APACHE "$app/Contents/Resources/GPUI-Base-LICENSE.txt"
 
-swift -module-cache-path "$build_root/swift-module-cache" installer/macos-icon.swift "$build_root/rdiff.iconset"
-iconutil --convert icns "$build_root/rdiff.iconset" --output "$app/Contents/Resources/rdiff.icns"
+iconutil --convert icns "$iconset" --output "$app/Contents/Resources/rdiff.icns"
 cat > "$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

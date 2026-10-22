@@ -14,7 +14,7 @@ For MSI installations, self-update downloads and verifies the new MSI, then wait
 
 The original v0.1.1 updater only replaces the executable. Install the v0.1.3 or later MSI once to enable MSI-based updates for subsequent releases. Version 0.1.3 also removes a PowerShell module dependency that could prevent v0.1.2 MSI updates from completing.
 
-For unattended installation, use `msiexec /i rdiff-0.1.7-windows-x86_64.msi /qn /norestart`.
+For unattended installation, use `msiexec /i rdiff-0.1.8-windows-x86_64.msi /qn /norestart`.
 
 On Apple Silicon Macs running macOS 11 or later, download [rdiff-macos-arm64.dmg](https://github.com/zenogrid-law80/rdiff/releases/latest/download/rdiff-macos-arm64.dmg), open it, and drag **rdiff.app** to **Applications**. Intel Mac builds are not currently provided. The Mac build is ad-hoc signed and has not been notarized by Apple. If macOS blocks the first launch, review the app in **System Settings → Privacy & Security → Open Anyway**. Install Mac updates manually by replacing the app with the latest DMG; the built-in updater currently supports Windows x64 only.
 
@@ -181,6 +181,8 @@ SCSS and MDX use the CSS and Markdown grammars, respectively. C/C++ headers endi
 ## Development and validation
 
 On Windows, `build.rs` converts `website/favicon.svg` into a transparent ICO at 16, 24, 32, 48, 64, 128, and 256 pixels and embeds it in the executable. The SVG's aspect ratio is preserved. GPUI uses this resource for the window and taskbar icon. Changes to the SVG automatically rebuild the icon without a separate conversion tool.
+
+On macOS, the same build script renders `website/favicon.svg` into the standard iconset at 16, 32, 128, 256, and 512 points, each at 1× and 2× resolution. The DMG packaging script converts it to the app bundle's ICNS icon with `iconutil`.
 
 ```powershell
 cargo fmt --all --check

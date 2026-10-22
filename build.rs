@@ -1,32 +1,62 @@
-use std::{env, error::Error, fs, io::Write, path::PathBuf};
+use std::{
+    env,
+    error::Error,
+    fs,
+    io::Write,
+    path::{Path, PathBuf},
+};
 
 fn main() -> Result<(), Box<dyn Error>> {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=website/favicon.svg");
-    if env::var("CARGO_CFG_TARGET_OS")? != "windows" {
+    let target_os = env::var("CARGO_CFG_TARGET_OS")?;
+    if !matches!(target_os.as_str(), "windows" | "macos") {
         return Ok(());
     }
 
     let out_dir = PathBuf::from(env::var_os("OUT_DIR").ok_or("OUT_DIR is missing")?);
     let svg = fs::read("website/favicon.svg")?;
     let tree = resvg::usvg::Tree::from_data(&svg, &resvg::usvg::Options::default())?;
+    if target_os == "macos" {
+        let directory = out_dir.join("rdiff.iconset");
+        fs::create_dir_all(&directory)?;
+        for size in [16, 32, 128, 256, 512] {
+            for scale in [1, 2] {
+                let suffix = if scale == 2 { "@2x" } else { "" };
+                fs::write(
+                    directory.join(format!("icon_{size}x{size}{suffix}.png")),
+                    render_icon(&tree, size * scale)?,
+                )?;
+            }
+        }
+        return Ok(());
+    }
+
+    embed_windows_icon(&tree, &out_dir)
+}
+
+fn render_icon(tree: &resvg::usvg::Tree, size: u32) -> Result<Vec<u8>, Box<dyn Error>> {
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(size, size)
+        .ok_or("Cannot allocate application icon image")?;
+    // Preserve the SVG's aspect ratio and center it on a transparent square.
+    let scale = (size as f32 / tree.size().width()).min(size as f32 / tree.size().height());
+    let transform = resvg::tiny_skia::Transform::from_row(
+        scale,
+        0.,
+        0.,
+        scale,
+        (size as f32 - tree.size().width() * scale) / 2.,
+        (size as f32 - tree.size().height() * scale) / 2.,
+    );
+    resvg::render(tree, transform, &mut pixmap.as_mut());
+    Ok(pixmap.encode_png()?)
+}
+
+fn embed_windows_icon(tree: &resvg::usvg::Tree, out_dir: &Path) -> Result<(), Box<dyn Error>> {
     let sizes = [16u32, 24, 32, 48, 64, 128, 256];
     let mut images = Vec::new();
     for size in sizes {
-        let mut pixmap = resvg::tiny_skia::Pixmap::new(size, size)
-            .ok_or("Cannot allocate application icon image")?;
-        // Preserve the SVG's aspect ratio and center it on a transparent square.
-        let scale = (size as f32 / tree.size().width()).min(size as f32 / tree.size().height());
-        let transform = resvg::tiny_skia::Transform::from_row(
-            scale,
-            0.,
-            0.,
-            scale,
-            (size as f32 - tree.size().width() * scale) / 2.,
-            (size as f32 - tree.size().height() * scale) / 2.,
-        );
-        resvg::render(&tree, transform, &mut pixmap.as_mut());
-        images.push(pixmap.encode_png()?);
+        images.push(render_icon(tree, size)?);
     }
 
     // ICO directory followed by PNG frames, preserving alpha transparency.

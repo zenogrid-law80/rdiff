@@ -1,6 +1,6 @@
 [package]
 name = "ridff-tools"
-version = "0.1.7"
+version = "0.1.8"
 edition = "2024"
 autoexamples = false
 description = "A native side-by-side text diff tool built with GPUI Kit"
