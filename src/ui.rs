@@ -101,6 +101,7 @@ struct DiffApp {
 
 impl DiffApp {
     fn new(paths: &[PathBuf], window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let preferences = cx.global::<settings::Preferences>().clone();
         let mut left_text = String::new();
         let mut right_text = String::new();
         let mut left_name = "No file selected".to_owned();
@@ -179,11 +180,16 @@ impl DiffApp {
                 this.compare(cx);
             }
         });
-        let comparison = Arc::new(diff::compare(&left_text, &right_text, false));
+        let comparison = Arc::new(diff::compare_with_whitespace(
+            &left_text,
+            &right_text,
+            preferences.whitespace,
+        ));
         let focus = cx.focus_handle();
         window.focus(&focus, cx);
         let mut this = Self {
-            settings: cx.new(|cx| settings::SettingsPanel::new(window, cx)),
+            settings: cx
+                .new(|cx| settings::SettingsPanel::new(settings::WindowKind::Diff, window, cx)),
             surface,
             _surface_subscription: surface_subscription,
             left,
@@ -212,10 +218,10 @@ impl DiffApp {
             selected: None,
             scroll: UniformListScrollHandle::new(),
             focus,
-            unified: false,
-            whitespace: diff::Whitespace::Exact,
-            highlight: diff::HighlightMode::Words,
-            show_changes: false,
+            unified: preferences.unified,
+            whitespace: preferences.whitespace,
+            highlight: preferences.highlight,
+            show_changes: preferences.show_changes,
             busy: false,
             revision: 0,
             status,
@@ -224,6 +230,11 @@ impl DiffApp {
         this.rebuild_rows();
         this.update_surface(cx);
         this
+    }
+
+    fn remember(&mut self, change: impl Fn(&mut settings::Preferences), cx: &mut Context<Self>) {
+        self.settings
+            .update(cx, |panel, cx| panel.remember(change, cx));
     }
 
     fn update_surface(&mut self, cx: &mut Context<Self>) {
@@ -1265,6 +1276,8 @@ impl DiffApp {
                     .tooltip(tr("Highlighting: Words / Characters / Lines / None"))
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.highlight = this.highlight.next();
+                        let highlight = this.highlight;
+                        this.remember(|preferences| preferences.highlight = highlight, cx);
                         this.update_surface(cx);
                         cx.notify();
                     })),
@@ -1283,6 +1296,8 @@ impl DiffApp {
                     .disabled(self.saving)
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.whitespace = this.whitespace.next();
+                        let whitespace = this.whitespace;
+                        this.remember(|preferences| preferences.whitespace = whitespace, cx);
                         this.compare(cx);
                     })),
             )
@@ -1296,10 +1311,12 @@ impl DiffApp {
                         tr(if curved { "Curved" } else { "Straight" })
                     ))
                     .on_click(cx.listener(|this, _, _, cx| {
-                        this.surface.update(cx, |s, cx| {
+                        let curved = this.surface.update(cx, |s, cx| {
                             s.curved = !s.curved;
                             cx.notify();
+                            s.curved
                         });
+                        this.remember(|preferences| preferences.curved = curved, cx);
                         cx.notify();
                     })),
             )
@@ -1529,10 +1546,12 @@ impl Render for DiffApp {
                             }))
                             .selected(sync)
                             .on_click(cx.listener(|this, _, _, cx| {
-                                this.surface.update(cx, |s, cx| {
+                                let sync = this.surface.update(cx, |s, cx| {
                                     s.sync_scroll = !s.sync_scroll;
                                     cx.notify();
+                                    s.sync_scroll
                                 });
+                                this.remember(|preferences| preferences.sync_scroll = sync, cx);
                                 cx.notify();
                             })),
                     )
@@ -1553,6 +1572,11 @@ impl Render for DiffApp {
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.surface
                                     .update(cx, |surface, cx| surface.toggle_unchanged(cx));
+                                let collapsed = this.surface.read(cx).collapse_unchanged;
+                                this.remember(
+                                    |preferences| preferences.collapse_unchanged = collapsed,
+                                    cx,
+                                );
                                 cx.notify();
                             })),
                     )
@@ -1566,6 +1590,7 @@ impl Render for DiffApp {
                             .selected(!self.unified)
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.unified = false;
+                                this.remember(|preferences| preferences.unified = false, cx);
                                 this.rebuild_rows();
                                 this.update_surface(cx);
                                 cx.notify();
@@ -1579,6 +1604,7 @@ impl Render for DiffApp {
                             .selected(self.unified)
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.unified = true;
+                                this.remember(|preferences| preferences.unified = true, cx);
                                 this.rebuild_rows();
                                 cx.notify();
                             })),
@@ -1593,6 +1619,8 @@ impl Render for DiffApp {
                             .selected(self.show_changes)
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.show_changes = !this.show_changes;
+                                let show = this.show_changes;
+                                this.remember(|preferences| preferences.show_changes = show, cx);
                                 cx.notify();
                             })),
                     )
@@ -1696,11 +1724,11 @@ pub fn run(paths: Vec<PathBuf>) {
             init(cx);
             crate::syntax::init();
             settings::init(cx);
-            let bounds = Bounds::centered(None, size(px(1360.), px(860.)), cx);
+            let kind = settings::WindowKind::Diff;
             let (_, view) = open_window(
                 WindowOptions {
-                    window_bounds: Some(WindowBounds::Windowed(bounds)),
-                    window_min_size: Some(size(px(1040.), px(640.))),
+                    window_bounds: Some(kind.bounds(cx)),
+                    window_min_size: Some(kind.min_size()),
                     titlebar: Some(TitlebarOptions {
                         title: Some(tr("rdiff — Text comparison").into()),
                         ..Default::default()

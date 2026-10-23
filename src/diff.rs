@@ -149,7 +149,8 @@ pub fn inline_changes(left: &str, right: &str, mode: HighlightMode) -> [Vec<Rang
     ranges
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum HighlightMode {
     #[default]
     Words,
@@ -176,7 +177,8 @@ impl HighlightMode {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Whitespace {
     #[default]
     Exact,
@@ -267,6 +269,7 @@ fn key(line: &Line, whitespace: Whitespace) -> String {
     text
 }
 
+#[cfg(test)]
 pub fn compare(left: &str, right: &str, ignore_whitespace: bool) -> Comparison {
     compare_with_whitespace(
         left,

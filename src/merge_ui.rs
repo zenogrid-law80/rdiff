@@ -55,6 +55,7 @@ impl MergeApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        let preferences = cx.global::<settings::Preferences>().clone();
         let source = cx.new(|cx| {
             EditorState::new(window, cx)
                 .language(surface::language(&paths.source.to_string_lossy()))
@@ -139,7 +140,8 @@ impl MergeApp {
             });
         }).detach();
         Self {
-            settings: cx.new(|cx| settings::SettingsPanel::new(window, cx)),
+            settings: cx
+                .new(|cx| settings::SettingsPanel::new(settings::WindowKind::Merge, window, cx)),
             paths,
             input: None,
             document: None,
@@ -150,9 +152,9 @@ impl MergeApp {
             result,
             surface,
             _surface_subscription: surface_subscription,
-            show_conflicts: false,
-            highlight: diff::HighlightMode::Words,
-            show_base: false,
+            show_conflicts: preferences.show_conflicts,
+            highlight: preferences.highlight,
+            show_base: preferences.show_base,
             saved_text: None,
             changed: false,
             saving: false,
@@ -161,6 +163,11 @@ impl MergeApp {
             exit,
             _subscription: subscription,
         }
+    }
+
+    fn remember(&mut self, change: impl Fn(&mut settings::Preferences), cx: &mut Context<Self>) {
+        self.settings
+            .update(cx, |panel, cx| panel.remember(change, cx));
     }
 
     fn ready(&self) -> bool {
@@ -518,6 +525,8 @@ impl MergeApp {
                     .tooltip(tr("Highlighting: Words / Characters / Lines / None"))
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.highlight = this.highlight.next();
+                        let highlight = this.highlight;
+                        this.remember(|preferences| preferences.highlight = highlight, cx);
                         this.paint_conflicts(cx);
                         cx.notify();
                     })),
@@ -532,10 +541,12 @@ impl MergeApp {
                         tr(if curved { "Curved" } else { "Straight" })
                     ))
                     .on_click(cx.listener(|this, _, _, cx| {
-                        this.surface.update(cx, |s, cx| {
+                        let curved = this.surface.update(cx, |s, cx| {
                             s.curved = !s.curved;
                             cx.notify();
+                            s.curved
                         });
+                        this.remember(|preferences| preferences.curved = curved, cx);
                         cx.notify();
                     })),
             )
@@ -825,10 +836,12 @@ impl Render for MergeApp {
                             }))
                             .selected(sync)
                             .on_click(cx.listener(|this, _, _, cx| {
-                                this.surface.update(cx, |s, cx| {
+                                let sync = this.surface.update(cx, |s, cx| {
                                     s.sync_scroll = !s.sync_scroll;
                                     cx.notify();
+                                    s.sync_scroll
                                 });
+                                this.remember(|preferences| preferences.sync_scroll = sync, cx);
                                 cx.notify();
                             })),
                     )
@@ -849,6 +862,11 @@ impl Render for MergeApp {
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.surface
                                     .update(cx, |surface, cx| surface.toggle_unchanged(cx));
+                                let collapsed = this.surface.read(cx).collapse_unchanged;
+                                this.remember(
+                                    |preferences| preferences.collapse_unchanged = collapsed,
+                                    cx,
+                                );
                                 cx.notify();
                             })),
                     )
@@ -862,6 +880,8 @@ impl Render for MergeApp {
                             .disabled(locked)
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.show_base = !this.show_base;
+                                let show = this.show_base;
+                                this.remember(|preferences| preferences.show_base = show, cx);
                                 cx.notify();
                             })),
                     )
@@ -888,6 +908,8 @@ impl Render for MergeApp {
                             .selected(self.show_conflicts)
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.show_conflicts = !this.show_conflicts;
+                                let show = this.show_conflicts;
+                                this.remember(|preferences| preferences.show_conflicts = show, cx);
                                 cx.notify();
                             })),
                     )
@@ -1045,11 +1067,11 @@ pub fn run(paths: MergePaths) -> u8 {
             init(cx);
             crate::syntax::init();
             settings::init(cx);
-            let bounds = Bounds::centered(None, size(px(1480.), px(920.)), cx);
+            let kind = settings::WindowKind::Merge;
             let (_, view) = open_window(
                 WindowOptions {
-                    window_bounds: Some(WindowBounds::Windowed(bounds)),
-                    window_min_size: Some(size(px(1160.), px(720.))),
+                    window_bounds: Some(kind.bounds(cx)),
+                    window_min_size: Some(kind.min_size()),
                     titlebar: Some(TitlebarOptions {
                         title: Some(tr("rdiff — Three-way merge").into()),
                         ..Default::default()

@@ -210,6 +210,7 @@ impl DiffSurface {
             cx.notify();
         }));
         let count = editors.len();
+        let preferences = cx.global::<settings::Preferences>().clone();
         Self {
             editors,
             readonly,
@@ -218,11 +219,11 @@ impl DiffSurface {
             highlights,
             inline: Vec::new(),
             last_dark: settings::dark(),
-            sync_scroll: true,
-            curved: true,
+            sync_scroll: preferences.sync_scroll,
+            curved: preferences.curved,
             highlighting: true,
             disabled: false,
-            collapse_unchanged: true,
+            collapse_unchanged: preferences.collapse_unchanged,
             folds: Vec::new(),
             expanded_folds: HashSet::new(),
             fold_texts: Vec::new(),
