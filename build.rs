@@ -6,17 +6,21 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use image::ImageEncoder;
+
 fn main() -> Result<(), Box<dyn Error>> {
     println!("cargo:rerun-if-changed=build.rs");
-    println!("cargo:rerun-if-changed=website/favicon.svg");
+    println!("cargo:rerun-if-changed=website/favicon.png");
     let target_os = env::var("CARGO_CFG_TARGET_OS")?;
     if !matches!(target_os.as_str(), "windows" | "macos") {
         return Ok(());
     }
 
     let out_dir = PathBuf::from(env::var_os("OUT_DIR").ok_or("OUT_DIR is missing")?);
-    let svg = fs::read("website/favicon.svg")?;
-    let tree = resvg::usvg::Tree::from_data(&svg, &resvg::usvg::Options::default())?;
+    let source = image::load_from_memory_with_format(
+        &fs::read("website/favicon.png")?,
+        image::ImageFormat::Png,
+    )?;
     if target_os == "macos" {
         let directory = out_dir.join("rdiff.iconset");
         fs::create_dir_all(&directory)?;
@@ -25,38 +29,43 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let suffix = if scale == 2 { "@2x" } else { "" };
                 fs::write(
                     directory.join(format!("icon_{size}x{size}{suffix}.png")),
-                    render_icon(&tree, size * scale)?,
+                    render_icon(&source, size * scale)?,
                 )?;
             }
         }
         return Ok(());
     }
 
-    embed_windows_icon(&tree, &out_dir)
+    embed_windows_icon(&source, &out_dir)
 }
 
-fn render_icon(tree: &resvg::usvg::Tree, size: u32) -> Result<Vec<u8>, Box<dyn Error>> {
-    let mut pixmap = resvg::tiny_skia::Pixmap::new(size, size)
-        .ok_or("Cannot allocate application icon image")?;
-    // Preserve the SVG's aspect ratio and center it on a transparent square.
-    let scale = (size as f32 / tree.size().width()).min(size as f32 / tree.size().height());
-    let transform = resvg::tiny_skia::Transform::from_row(
-        scale,
-        0.,
-        0.,
-        scale,
-        (size as f32 - tree.size().width() * scale) / 2.,
-        (size as f32 - tree.size().height() * scale) / 2.,
+fn render_icon(source: &image::DynamicImage, size: u32) -> Result<Vec<u8>, Box<dyn Error>> {
+    let scaled = source
+        .resize(size, size, image::imageops::FilterType::Lanczos3)
+        .to_rgba8();
+    // Preserve the PNG's aspect ratio and center it on a transparent square.
+    let mut pixels = image::RgbaImage::new(size, size);
+    image::imageops::replace(
+        &mut pixels,
+        &scaled,
+        ((size - scaled.width()) / 2).into(),
+        ((size - scaled.height()) / 2).into(),
     );
-    resvg::render(tree, transform, &mut pixmap.as_mut());
-    Ok(pixmap.encode_png()?)
+    let mut png = Vec::new();
+    image::codecs::png::PngEncoder::new(&mut png).write_image(
+        pixels.as_raw(),
+        size,
+        size,
+        image::ExtendedColorType::Rgba8,
+    )?;
+    Ok(png)
 }
 
-fn embed_windows_icon(tree: &resvg::usvg::Tree, out_dir: &Path) -> Result<(), Box<dyn Error>> {
+fn embed_windows_icon(source: &image::DynamicImage, out_dir: &Path) -> Result<(), Box<dyn Error>> {
     let sizes = [16u32, 24, 32, 48, 64, 128, 256];
     let mut images = Vec::new();
     for size in sizes {
-        images.push(render_icon(tree, size)?);
+        images.push(render_icon(source, size)?);
     }
 
     // ICO directory followed by PNG frames, preserving alpha transparency.

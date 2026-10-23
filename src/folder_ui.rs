@@ -1,6 +1,8 @@
 use crate::{
     diff,
-    folder::{self, CompareOptions, EntryKind, FolderComparison, SortColumn, Status},
+    folder::{
+        self, CompareOptions, CopyDirection, EntryKind, FolderComparison, SortColumn, Status,
+    },
     i18n::tr,
     settings, surface, ui,
 };
@@ -55,6 +57,11 @@ struct FolderApp {
     busy: bool,
     picking: bool,
     opening: bool,
+    copying: bool,
+    copy_prompt: bool,
+    copy_task: Option<Task<()>>,
+    pending_selection: Option<PathBuf>,
+    message: Option<String>,
     error: Option<String>,
     cancelled: Arc<AtomicBool>,
     scan_task: Option<Task<()>>,
@@ -120,6 +127,11 @@ impl FolderApp {
             busy: false,
             picking: false,
             opening: false,
+            copying: false,
+            copy_prompt: false,
+            copy_task: None,
+            pending_selection: None,
+            message: None,
             error: None,
             cancelled: Arc::new(AtomicBool::new(false)),
             scan_task: None,
@@ -157,7 +169,7 @@ impl FolderApp {
     }
 
     fn compare(&mut self, cx: &mut Context<Self>) {
-        if self.busy || self.picking {
+        if self.busy || self.picking || self.copying || self.copy_prompt {
             return;
         }
         let roots = self.roots(cx);
@@ -184,6 +196,7 @@ impl FolderApp {
         let task_options = options.clone();
         self.busy = true;
         self.error = None;
+        self.message = None;
         self.comparison = None;
         self.visible.clear();
         self.selected = None;
@@ -201,6 +214,17 @@ impl FolderApp {
                         this.comparison = Some(Arc::new(comparison));
                         this.compared_options = Some(options);
                         this.rebuild();
+                        if let Some(relative) = this.pending_selection.take() {
+                            this.selected = this
+                                .visible
+                                .iter()
+                                .copied()
+                                .find(|&index| {
+                                    this.comparison.as_ref().unwrap().entries[index].relative
+                                        == relative
+                                })
+                                .or(this.selected);
+                        }
                     }
                     Err(error) => {
                         this.error = Some(format!("{}: {error}", tr("Folder comparison failed")))
@@ -214,6 +238,11 @@ impl FolderApp {
 
     fn cancel(&mut self, cx: &mut Context<Self>) {
         self.cancelled.store(true, Ordering::Relaxed);
+        if self.copying {
+            self.message = Some(tr("Canceling file copy…"));
+            cx.notify();
+            return;
+        }
         self.scan_task = None;
         self.busy = false;
         self.error = Some(tr("Folder comparison canceled"));
@@ -236,7 +265,7 @@ impl FolderApp {
     }
 
     fn pick(&mut self, side: usize, window: &mut Window, cx: &mut Context<Self>) {
-        if self.busy || self.picking {
+        if self.busy || self.picking || self.copying || self.copy_prompt {
             return;
         }
         self.picking = true;
@@ -278,7 +307,7 @@ impl FolderApp {
     }
 
     fn open_selected(&mut self, cx: &mut Context<Self>) {
-        if self.busy || self.opening || !self.current(cx) {
+        if self.busy || self.opening || self.copying || self.copy_prompt || !self.current(cx) {
             return;
         }
         let Some(comparison) = &self.comparison else {
@@ -326,6 +355,124 @@ impl FolderApp {
         cx.notify();
     }
 
+    fn can_copy(&self, direction: CopyDirection, cx: &App) -> bool {
+        !self.busy
+            && !self.picking
+            && !self.opening
+            && !self.copying
+            && !self.copy_prompt
+            && self.current(cx)
+            && self
+                .selected
+                .and_then(|index| self.comparison.as_ref()?.entries.get(index))
+                .is_some_and(|entry| entry.can_copy(direction))
+    }
+
+    fn request_copy(
+        &mut self,
+        direction: CopyDirection,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.can_copy(direction, cx) {
+            return;
+        }
+        let comparison = self.comparison.as_ref().unwrap().clone();
+        let index = self.selected.unwrap();
+        let entry = &comparison.entries[index];
+        if entry.info(1 - direction.source()).is_none() {
+            self.start_copy(comparison, index, direction, cx);
+            return;
+        }
+        let source = comparison.roots[direction.source()].join(&entry.relative);
+        let target = comparison.roots[1 - direction.source()].join(&entry.relative);
+        let sides = [tr("Left folder"), tr("Right folder")];
+        let detail = format!(
+            "{}: {}\n\n{} ({}):\n{}\n\n{} ({}):\n{}",
+            tr("File name"),
+            entry.relative.display(),
+            tr("Copy from"),
+            sides[direction.source()],
+            source.display(),
+            tr("Overwrite destination"),
+            sides[1 - direction.source()],
+            target.display()
+        );
+        let question = format!(
+            "{}\n{}",
+            tr(direction.label()),
+            tr("Overwrite the destination file?")
+        );
+        let answers = [tr("Cancel"), tr("Overwrite")];
+        let refs: Vec<_> = answers.iter().map(String::as_str).collect();
+        self.copy_prompt = true;
+        let prompt = window.prompt(PromptLevel::Warning, &question, Some(&detail), &refs, cx);
+        cx.spawn_in(window, async move |this, cx| {
+            let answer = prompt.await.ok();
+            let _ = this.update(cx, |this, cx| {
+                this.copy_prompt = false;
+                if answer == Some(1) {
+                    this.start_copy(comparison, index, direction, cx);
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+        cx.notify();
+    }
+
+    fn start_copy(
+        &mut self,
+        comparison: Arc<FolderComparison>,
+        index: usize,
+        direction: CopyDirection,
+        cx: &mut Context<Self>,
+    ) {
+        if self.copying
+            || !self.current(cx)
+            || !self
+                .comparison
+                .as_ref()
+                .is_some_and(|current| Arc::ptr_eq(current, &comparison))
+        {
+            return;
+        }
+        let relative = comparison.entries[index].relative.clone();
+        self.cancelled.store(true, Ordering::Relaxed);
+        self.cancelled = Arc::new(AtomicBool::new(false));
+        let cancelled = self.cancelled.clone();
+        self.copying = true;
+        self.error = None;
+        self.message = Some(format!("{} · {}", tr("Copying file…"), relative.display()));
+        let copy = cx
+            .background_executor()
+            .spawn(async move { comparison.copy_file(index, direction, &cancelled) });
+        self.copy_task = Some(cx.spawn(async move |this, cx| {
+            let result = copy.await;
+            let _ = this.update(cx, |this, cx| {
+                this.copying = false;
+                this.message = None;
+                match result {
+                    Ok(_) => {
+                        this.pending_selection = Some(relative.clone());
+                        this.compare(cx);
+                        this.message = Some(format!(
+                            "{} · {} · {}",
+                            tr("Copied"),
+                            tr(direction.label()),
+                            relative.display()
+                        ));
+                    }
+                    Err(error) => {
+                        this.error = Some(format!("{}: {}", tr("Copy failed"), tr(error)))
+                    }
+                }
+                cx.notify();
+            });
+        }));
+        cx.notify();
+    }
+
     fn path_row(&self, side: usize, cx: &mut Context<Self>) -> impl IntoElement {
         let label = if side == 0 {
             "Left folder"
@@ -345,7 +492,7 @@ impl FolderApp {
                         style.bg(rgb(settings::color(0x32455b)))
                     })
                     .on_drop(cx.listener(move |this, files: &ExternalPaths, window, cx| {
-                        if this.busy || this.picking {
+                        if this.busy || this.picking || this.copying || this.copy_prompt {
                             return;
                         }
                         if let [path] = files.paths() {
@@ -362,7 +509,9 @@ impl FolderApp {
                         Input::new(&self.paths[side])
                             .small()
                             .aria_label(tr(label))
-                            .disabled(self.busy || self.picking),
+                            .disabled(
+                                self.busy || self.picking || self.copying || self.copy_prompt,
+                            ),
                     ),
             )
             .child(
@@ -372,7 +521,7 @@ impl FolderApp {
                     .child(settings::icon("folder-open"))
                     .label(tr("Browse…"))
                     .accessibility_label(format!("{}: {}", tr("Browse…"), tr(label)))
-                    .disabled(self.busy || self.picking)
+                    .disabled(self.busy || self.picking || self.copying || self.copy_prompt)
                     .on_click(cx.listener(move |this, _, window, cx| this.pick(side, window, cx))),
             )
     }
@@ -475,6 +624,9 @@ impl FolderApp {
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                    if this.copying || this.copy_prompt {
+                        return;
+                    }
                     this.selected = Some(index);
                     window.focus(&this.focus, cx);
                     if event.click_count == 2 {
@@ -591,25 +743,29 @@ impl Render for FolderApp {
         } else {
             tr("Choose two folders and press Compare")
         };
-        let detail = self.error.clone().unwrap_or_else(|| {
-            if !current && self.comparison.is_some() {
-                return tr("Paths or options changed. Compare again.");
-            }
-            self.selected
-                .and_then(|index| self.comparison.as_ref()?.entries.get(index))
-                .map(|entry| {
-                    if let Some(error) = &entry.error {
-                        format!("{}: {error}", entry.relative.display())
-                    } else {
-                        format!(
-                            "{} · {}",
-                            entry.relative.display(),
-                            tr("Double-click a file or press Enter to open its diff")
-                        )
-                    }
-                })
-                .unwrap_or_else(|| tr("Double-click a file or press Enter to open its diff"))
-        });
+        let detail = self
+            .error
+            .clone()
+            .or_else(|| self.message.clone())
+            .unwrap_or_else(|| {
+                if !current && self.comparison.is_some() {
+                    return tr("Paths or options changed. Compare again.");
+                }
+                self.selected
+                    .and_then(|index| self.comparison.as_ref()?.entries.get(index))
+                    .map(|entry| {
+                        if let Some(error) = &entry.error {
+                            format!("{}: {error}", entry.relative.display())
+                        } else {
+                            format!(
+                                "{} · {}",
+                                entry.relative.display(),
+                                tr("Double-click a file or press Enter to open its diff")
+                            )
+                        }
+                    })
+                    .unwrap_or_else(|| tr("Double-click a file or press Enter to open its diff"))
+            });
         let body = if self.visible.is_empty() {
             div()
                 .flex_1()
@@ -650,7 +806,7 @@ impl Render for FolderApp {
             .text_color(rgb(settings::color(0xd6dfeb)))
             .font_family("Segoe UI")
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
-                if settings::popup_open() {
+                if settings::popup_open() || this.copy_prompt {
                     return;
                 }
                 match event.keystroke.key.as_str() {
@@ -659,7 +815,7 @@ impl Render for FolderApp {
                         cx.stop_propagation();
                     }
                     "escape" => {
-                        if this.busy {
+                        if this.busy || this.copying {
                             this.cancel(cx);
                         } else {
                             window.remove_window();
@@ -668,6 +824,24 @@ impl Render for FolderApp {
                     }
                     "enter" if this.focus.is_focused(window) => {
                         this.open_selected(cx);
+                        cx.stop_propagation();
+                    }
+                    "right" | "left"
+                        if event.keystroke.modifiers.alt
+                            && !event.keystroke.modifiers.control
+                            && !event.keystroke.modifiers.shift
+                            && !event.keystroke.modifiers.platform
+                            && this.focus.is_focused(window) =>
+                    {
+                        this.request_copy(
+                            if event.keystroke.key == "right" {
+                                CopyDirection::LeftToRight
+                            } else {
+                                CopyDirection::RightToLeft
+                            },
+                            window,
+                            cx,
+                        );
                         cx.stop_propagation();
                     }
                     "down" | "up" if this.focus.is_focused(window) && !this.visible.is_empty() => {
@@ -710,7 +884,12 @@ impl Render for FolderApp {
                                     .small()
                                     .ghost()
                                     .label(tr("Swap folders"))
-                                    .disabled(self.busy || self.picking)
+                                    .disabled(
+                                        self.busy
+                                            || self.picking
+                                            || self.copying
+                                            || self.copy_prompt,
+                                    )
                                     .on_click(cx.listener(|this, _, window, cx| {
                                         let left = this.paths[0].read(cx).value();
                                         let right = this.paths[1].read(cx).value();
@@ -729,7 +908,7 @@ impl Render for FolderApp {
                                     .ghost()
                                     .label(tr("Include subfolders"))
                                     .selected(self.recursive)
-                                    .disabled(self.busy)
+                                    .disabled(self.busy || self.copying || self.copy_prompt)
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.recursive = !this.recursive;
                                         let recursive = this.recursive;
@@ -746,20 +925,20 @@ impl Render for FolderApp {
                                     .small()
                                     .w(px(180.))
                                     .aria_label(tr("File filter"))
-                                    .disabled(self.busy),
+                                    .disabled(self.busy || self.copying || self.copy_prompt),
                             )
                             .child(div().flex_1())
                             .child(
                                 Button::new("folder-compare")
                                     .small()
-                                    .label(tr(if self.busy {
+                                    .label(tr(if self.busy || self.copying {
                                         "Cancel"
                                     } else {
                                         "Compare folders"
                                     }))
-                                    .disabled(self.picking)
+                                    .disabled(self.picking || self.copy_prompt)
                                     .on_click(cx.listener(|this, _, _, cx| {
-                                        if this.busy {
+                                        if this.busy || this.copying {
                                             this.cancel(cx);
                                         } else {
                                             this.compare(cx);
@@ -805,11 +984,39 @@ impl Render for FolderApp {
                             .child(summary),
                     )
                     .child(
+                        Button::new("folder-copy-to-right")
+                            .small()
+                            .ghost()
+                            .label(tr(CopyDirection::LeftToRight.label()))
+                            .tooltip(tr("Copy the selected file to the right folder · Alt+Right"))
+                            .disabled(!self.can_copy(CopyDirection::LeftToRight, cx))
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.request_copy(CopyDirection::LeftToRight, window, cx)
+                            })),
+                    )
+                    .child(
+                        Button::new("folder-copy-to-left")
+                            .small()
+                            .ghost()
+                            .label(tr(CopyDirection::RightToLeft.label()))
+                            .tooltip(tr("Copy the selected file to the left folder · Alt+Left"))
+                            .disabled(!self.can_copy(CopyDirection::RightToLeft, cx))
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.request_copy(CopyDirection::RightToLeft, window, cx)
+                            })),
+                    )
+                    .child(
                         Button::new("folder-open-file")
                             .small()
                             .ghost()
                             .label(tr("Open file diff"))
-                            .disabled(!can_open || self.opening || self.busy)
+                            .disabled(
+                                !can_open
+                                    || self.opening
+                                    || self.busy
+                                    || self.copying
+                                    || self.copy_prompt,
+                            )
                             .on_click(cx.listener(|this, _, _, cx| this.open_selected(cx))),
                     ),
             )
@@ -864,7 +1071,15 @@ pub fn open(paths: [Option<PathBuf>; 2], cx: &mut App) -> Result<(), String> {
             ..Default::default()
         },
         cx,
-        |window, cx| cx.new(|cx| FolderApp::new(paths, window, cx)),
+        |window, cx| {
+            let view = cx.new(|cx| FolderApp::new(paths, window, cx));
+            let weak = view.downgrade();
+            window.on_window_should_close(cx, move |_, cx| {
+                weak.update(cx, |this, _| !this.copying && !this.copy_prompt)
+                    .unwrap_or(true)
+            });
+            view
+        },
     )
     .map_err(|error| error.to_string())?;
     cx.activate(true);

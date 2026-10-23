@@ -1,8 +1,8 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs::{self, File, Metadata},
-    io::Read,
-    path::{Path, PathBuf},
+    io::{Read, Write},
+    path::{Component, Path, PathBuf},
     sync::atomic::{AtomicBool, Ordering},
     time::SystemTime,
 };
@@ -15,6 +15,28 @@ pub enum EntryKind {
     Directory,
     Link,
     Other,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CopyDirection {
+    LeftToRight,
+    RightToLeft,
+}
+
+impl CopyDirection {
+    pub fn source(self) -> usize {
+        match self {
+            Self::LeftToRight => 0,
+            Self::RightToLeft => 1,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::LeftToRight => "Copy left → right",
+            Self::RightToLeft => "Copy right → left",
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -90,6 +112,24 @@ pub struct FolderEntry {
 }
 
 impl FolderEntry {
+    pub fn info(&self, side: usize) -> Option<&FileInfo> {
+        if side == 0 {
+            self.left.as_ref()
+        } else {
+            self.right.as_ref()
+        }
+    }
+
+    pub fn can_copy(&self, direction: CopyDirection) -> bool {
+        self.status != Status::Error
+            && self
+                .info(direction.source())
+                .is_some_and(|info| info.kind == EntryKind::File)
+            && self
+                .info(1 - direction.source())
+                .is_none_or(|info| info.kind == EntryKind::File)
+    }
+
     pub fn can_open(&self) -> bool {
         self.status != Status::Error
             && self
@@ -139,6 +179,109 @@ pub struct FolderComparison {
 }
 
 impl FolderComparison {
+    pub fn copy_file(
+        &self,
+        index: usize,
+        direction: CopyDirection,
+        cancelled: &AtomicBool,
+    ) -> Result<u64, String> {
+        check_copy_cancel(cancelled)?;
+        let entry = self
+            .entries
+            .get(index)
+            .filter(|entry| entry.can_copy(direction))
+            .ok_or("Select a regular file that exists on the source side")?;
+        if entry.relative.as_os_str().is_empty()
+            || entry
+                .relative
+                .components()
+                .any(|component| !matches!(component, Component::Normal(_)))
+        {
+            return Err("The file path must stay inside the selected folders".into());
+        }
+        let source_side = direction.source();
+        let target_side = 1 - source_side;
+        let source_info = entry.info(source_side).unwrap();
+        let target_info = entry.info(target_side);
+        let source_root =
+            fs::canonicalize(&self.roots[source_side]).map_err(|error| error.to_string())?;
+        let target_root =
+            fs::canonicalize(&self.roots[target_side]).map_err(|error| error.to_string())?;
+        let source = copy_path(&source_root, &entry.relative, false)?;
+        let target = copy_path(&target_root, &entry.relative, false)?;
+        let source_metadata = check_copy_snapshot(&source, Some(source_info))?.unwrap();
+        let target_metadata = check_copy_snapshot(&target, target_info)?;
+        let canonical_source = fs::canonicalize(&source).map_err(|error| error.to_string())?;
+        if fs::canonicalize(&target).ok().as_ref() == Some(&canonical_source) {
+            return Err("Source and destination are the same file".into());
+        }
+        check_writable(target_metadata.as_ref())?;
+        let mut input = File::open(&source).map_err(|error| error.to_string())?;
+        unchanged(&input, source_info)?;
+        // Create only missing ordinary directories. Never follow a directory
+        // symlink introduced since scanning to write outside the chosen root.
+        let target = copy_path(&target_root, &entry.relative, true)?;
+        let parent = target.parent().ok_or("Destination folder is unavailable")?;
+        let mut temp =
+            tempfile::NamedTempFile::new_in(parent).map_err(|error| error.to_string())?;
+        let temp_permissions = temp
+            .as_file()
+            .metadata()
+            .map_err(|error| error.to_string())?
+            .permissions();
+        let mut remaining = source_info.size;
+        let mut buffer = [0u8; 64 * 1024];
+        while remaining > 0 {
+            check_copy_cancel(cancelled)?;
+            let count = remaining.min(buffer.len() as u64) as usize;
+            input
+                .read_exact(&mut buffer[..count])
+                .map_err(|error| error.to_string())?;
+            temp.write_all(&buffer[..count])
+                .map_err(|error| error.to_string())?;
+            remaining -= count as u64;
+        }
+        temp.flush().map_err(|error| error.to_string())?;
+        temp.as_file()
+            .sync_all()
+            .map_err(|error| error.to_string())?;
+        unchanged(&input, source_info)?;
+        check_copy_snapshot(&source, Some(source_info))?;
+        if fs::canonicalize(&self.roots[source_side]).ok().as_ref() != Some(&source_root)
+            || fs::canonicalize(&self.roots[target_side]).ok().as_ref() != Some(&target_root)
+        {
+            return Err("A selected folder changed on disk. Compare again before copying.".into());
+        }
+        copy_path(&source_root, &entry.relative, false)?;
+        copy_path(&target_root, &entry.relative, false)?;
+        let latest_target = check_copy_snapshot(&target, target_info)?;
+        check_writable(latest_target.as_ref())?;
+        check_copy_cancel(cancelled)?;
+        // Preserve an existing destination's permissions; new files inherit
+        // source permissions, including executable bits on Unix.
+        let permissions = target_metadata
+            .as_ref()
+            .unwrap_or(&source_metadata)
+            .permissions();
+        temp.as_file()
+            .set_permissions(permissions)
+            .map_err(|error| error.to_string())?;
+        let published = if target_info.is_some() {
+            temp.persist(&target)
+        } else {
+            temp.persist_noclobber(&target)
+        };
+        match published {
+            Ok(_) => Ok(source_info.size),
+            Err(error) => {
+                // A read-only source must not leave an undeletable temporary
+                // file behind if Windows refuses the final rename.
+                let _ = error.file.as_file().set_permissions(temp_permissions);
+                Err(error.error.to_string())
+            }
+        }
+    }
+
     pub fn visible(&self, identical: bool, column: SortColumn, descending: bool) -> Vec<usize> {
         let mut indices: Vec<_> = self
             .entries
@@ -170,6 +313,87 @@ impl FolderComparison {
         });
         indices
     }
+}
+
+fn check_copy_cancel(cancelled: &AtomicBool) -> Result<(), String> {
+    if cancelled.load(Ordering::Relaxed) {
+        Err("File copy canceled".into())
+    } else {
+        Ok(())
+    }
+}
+
+fn check_writable(metadata: Option<&Metadata>) -> Result<(), String> {
+    if metadata.is_some_and(|metadata| metadata.permissions().readonly()) {
+        Err("The destination file is read-only".into())
+    } else {
+        Ok(())
+    }
+}
+
+fn check_copy_snapshot(
+    path: &Path,
+    expected: Option<&FileInfo>,
+) -> Result<Option<Metadata>, String> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => {
+            if expected.is_none_or(|info| {
+                info.kind != EntryKind::File
+                    || !metadata.is_file()
+                    || metadata.file_type().is_symlink()
+                    || metadata.len() != info.size
+                    || metadata.modified().ok() != info.modified
+            }) {
+                return Err(format!(
+                    "File changed on disk. Compare again before copying: {}",
+                    path.display()
+                ));
+            }
+            Ok(Some(metadata))
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound && expected.is_none() => {
+            Ok(None)
+        }
+        Err(error) => Err(format!("{}: {error}", path.display())),
+    }
+}
+
+fn copy_path(root: &Path, relative: &Path, create: bool) -> Result<PathBuf, String> {
+    let mut path = root.to_path_buf();
+    if !fs::metadata(root)
+        .map_err(|error| error.to_string())?
+        .is_dir()
+    {
+        return Err("A selected root is no longer a folder".into());
+    }
+    for component in relative.parent().unwrap_or(Path::new("")).components() {
+        path.push(component.as_os_str());
+        match fs::symlink_metadata(&path) {
+            Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                if create {
+                    match fs::create_dir(&path) {
+                        Ok(()) => {}
+                        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                            let metadata =
+                                fs::symlink_metadata(&path).map_err(|error| error.to_string())?;
+                            if !metadata.is_dir() || metadata.file_type().is_symlink() {
+                                return Err("Destination parent is not an ordinary folder".into());
+                            }
+                        }
+                        Err(error) => return Err(error.to_string()),
+                    }
+                }
+            }
+            _ => {
+                return Err(format!(
+                    "Parent folder changed or is a symbolic link: {}",
+                    path.display()
+                ));
+            }
+        }
+    }
+    Ok(root.join(relative))
 }
 
 #[derive(Clone)]
@@ -731,6 +955,271 @@ mod tests {
                 .unwrap()
                 .contains("File changed during comparison")
         );
+    }
+
+    fn file_index(comparison: &FolderComparison, relative: &str) -> usize {
+        comparison
+            .entries
+            .iter()
+            .position(|entry| entry.relative == Path::new(relative))
+            .unwrap()
+    }
+
+    #[test]
+    fn copies_selected_binary_file_in_both_directions_without_touching_other_files() {
+        let (_dir, roots) = folders();
+        fs::write(
+            roots[0].join("data.bin"),
+            [0xef, 0xbb, 0xbf, 0, 13, 10, 255],
+        )
+        .unwrap();
+        fs::write(roots[1].join("data.bin"), [0, 1, 2]).unwrap();
+        fs::write(roots[1].join("untouched.txt"), "keep").unwrap();
+        let comparison = result(roots.clone(), CompareOptions::default());
+        let index = file_index(&comparison, "data.bin");
+        assert!(comparison.entries[index].can_copy(CopyDirection::LeftToRight));
+        assert!(comparison.entries[index].can_copy(CopyDirection::RightToLeft));
+        assert_eq!(
+            comparison
+                .copy_file(index, CopyDirection::LeftToRight, &AtomicBool::new(false))
+                .unwrap(),
+            7
+        );
+        let bytes = fs::read(roots[0].join("data.bin")).unwrap();
+        assert_eq!(fs::read(roots[1].join("data.bin")).unwrap(), bytes);
+        let comparison = result(roots.clone(), CompareOptions::default());
+        assert_eq!(
+            comparison.entries[file_index(&comparison, "data.bin")].status,
+            Status::Identical
+        );
+        fs::write(roots[1].join("data.bin"), "수정\r\n").unwrap();
+        let comparison = result(roots.clone(), CompareOptions::default());
+        comparison
+            .copy_file(
+                file_index(&comparison, "data.bin"),
+                CopyDirection::RightToLeft,
+                &AtomicBool::new(false),
+            )
+            .unwrap();
+        assert_eq!(
+            fs::read(roots[0].join("data.bin")).unwrap(),
+            "수정\r\n".as_bytes()
+        );
+        assert_eq!(
+            fs::read_to_string(roots[1].join("untouched.txt")).unwrap(),
+            "keep"
+        );
+    }
+
+    #[test]
+    fn copies_one_sided_large_and_empty_files_and_creates_missing_parents() {
+        let (_dir, roots) = folders();
+        fs::create_dir_all(roots[0].join("하위/폴더")).unwrap();
+        let bytes = vec![171; crate::diff::MAX_BYTES + 65_537];
+        fs::write(roots[0].join("하위/폴더/파일.dat"), &bytes).unwrap();
+        fs::write(roots[1].join("empty.txt"), "").unwrap();
+        let comparison = result(roots.clone(), CompareOptions::default());
+        let index = file_index(&comparison, "하위/폴더/파일.dat");
+        assert!(!comparison.entries[index].can_copy(CopyDirection::RightToLeft));
+        assert!(
+            comparison
+                .copy_file(index, CopyDirection::RightToLeft, &AtomicBool::new(false))
+                .is_err()
+        );
+        assert_eq!(
+            comparison
+                .copy_file(index, CopyDirection::LeftToRight, &AtomicBool::new(false))
+                .unwrap(),
+            bytes.len() as u64
+        );
+        assert_eq!(
+            fs::read(roots[1].join("하위/폴더/파일.dat")).unwrap(),
+            bytes
+        );
+        comparison
+            .copy_file(
+                file_index(&comparison, "empty.txt"),
+                CopyDirection::RightToLeft,
+                &AtomicBool::new(false),
+            )
+            .unwrap();
+        assert_eq!(fs::read(roots[0].join("empty.txt")).unwrap(), b"");
+    }
+
+    #[test]
+    fn copy_refuses_stale_source_destination_and_unexpected_new_destination() {
+        for side in 0..2 {
+            let (_dir, roots) = folders();
+            for root in &roots {
+                fs::write(root.join("file.txt"), "old").unwrap();
+            }
+            let comparison = result(roots.clone(), CompareOptions::default());
+            fs::write(roots[side].join("file.txt"), "changed externally").unwrap();
+            let before = fs::read(roots[1].join("file.txt")).unwrap();
+            assert!(
+                comparison
+                    .copy_file(0, CopyDirection::LeftToRight, &AtomicBool::new(false))
+                    .is_err()
+            );
+            assert_eq!(fs::read(roots[1].join("file.txt")).unwrap(), before);
+        }
+        let (_dir, roots) = folders();
+        fs::write(roots[0].join("file.txt"), "source").unwrap();
+        let comparison = result(roots.clone(), CompareOptions::default());
+        fs::write(roots[1].join("file.txt"), "created externally").unwrap();
+        assert!(
+            comparison
+                .copy_file(0, CopyDirection::LeftToRight, &AtomicBool::new(false))
+                .is_err()
+        );
+        assert_eq!(
+            fs::read_to_string(roots[1].join("file.txt")).unwrap(),
+            "created externally"
+        );
+    }
+
+    #[test]
+    fn readonly_or_canceled_copy_preserves_destination_and_leaves_no_temporary_files() {
+        let (_dir, roots) = folders();
+        fs::write(roots[0].join("file.txt"), "source").unwrap();
+        let target = roots[1].join("file.txt");
+        fs::write(&target, "target").unwrap();
+        let comparison = result(roots.clone(), CompareOptions::default());
+        let permissions = fs::metadata(&target).unwrap().permissions();
+        let mut readonly = permissions.clone();
+        readonly.set_readonly(true);
+        fs::set_permissions(&target, readonly).unwrap();
+        let copied = comparison.copy_file(0, CopyDirection::LeftToRight, &AtomicBool::new(false));
+        fs::set_permissions(&target, permissions).unwrap();
+        assert!(copied.unwrap_err().contains("read-only"));
+        assert!(
+            comparison
+                .copy_file(0, CopyDirection::LeftToRight, &AtomicBool::new(true))
+                .is_err()
+        );
+        assert_eq!(fs::read_to_string(&target).unwrap(), "target");
+        assert_eq!(fs::read_dir(&roots[1]).unwrap().count(), 1);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn failed_atomic_replacement_keeps_original_and_cleans_temporary_file() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let (_dir, roots) = folders();
+        let source = roots[0].join("file.txt");
+        let target = roots[1].join("file.txt");
+        fs::write(&source, "new source bytes").unwrap();
+        fs::write(&target, "original destination").unwrap();
+        let permissions = fs::metadata(&source).unwrap().permissions();
+        let mut readonly = permissions.clone();
+        readonly.set_readonly(true);
+        fs::set_permissions(&source, readonly).unwrap();
+        let comparison = result(roots.clone(), CompareOptions::default());
+        // Let readers open the destination while another application prevents
+        // replacement by withholding FILE_SHARE_DELETE.
+        let _lock = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(3)
+            .open(&target)
+            .unwrap();
+        let copied = comparison.copy_file(0, CopyDirection::LeftToRight, &AtomicBool::new(false));
+        fs::set_permissions(&source, permissions).unwrap();
+        assert!(copied.is_err());
+        assert_eq!(fs::read_to_string(&target).unwrap(), "original destination");
+        assert_eq!(fs::read_dir(&roots[1]).unwrap().count(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn copy_preserves_source_execute_bits_for_new_files_and_existing_target_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let (_dir, roots) = folders();
+        let source = roots[0].join("script.sh");
+        let target = roots[1].join("script.sh");
+        fs::write(&source, "#!/bin/sh\necho hello\n").unwrap();
+        fs::set_permissions(&source, fs::Permissions::from_mode(0o755)).unwrap();
+        let comparison = result(roots.clone(), CompareOptions::default());
+        comparison
+            .copy_file(0, CopyDirection::LeftToRight, &AtomicBool::new(false))
+            .unwrap();
+        assert_eq!(
+            fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+            0o755
+        );
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o640)).unwrap();
+        let comparison = result(roots, CompareOptions::default());
+        comparison
+            .copy_file(0, CopyDirection::LeftToRight, &AtomicBool::new(false))
+            .unwrap();
+        assert_eq!(
+            fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+            0o640
+        );
+    }
+
+    #[test]
+    fn copy_rejects_type_conflicts_shared_paths_and_escaping_relative_paths() {
+        let (_dir, roots) = folders();
+        fs::write(roots[0].join("collision"), "source").unwrap();
+        fs::create_dir(roots[1].join("collision")).unwrap();
+        let comparison = result(roots.clone(), CompareOptions::default());
+        assert!(!comparison.entries[0].can_copy(CopyDirection::LeftToRight));
+        assert!(
+            comparison
+                .copy_file(0, CopyDirection::LeftToRight, &AtomicBool::new(false))
+                .is_err()
+        );
+        assert!(roots[1].join("collision").is_dir());
+        let comparison = result(
+            [roots[0].clone(), roots[0].clone()],
+            CompareOptions::default(),
+        );
+        assert!(
+            comparison
+                .copy_file(0, CopyDirection::LeftToRight, &AtomicBool::new(false))
+                .unwrap_err()
+                .contains("same file")
+        );
+        let mut comparison = result(roots, CompareOptions::default());
+        comparison.entries[0].right = None;
+        comparison.entries[0].relative = "../escape.txt".into();
+        assert!(
+            comparison
+                .copy_file(0, CopyDirection::LeftToRight, &AtomicBool::new(false))
+                .is_err()
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn copy_refuses_symbolic_link_substitution_on_either_side() {
+        use std::os::unix::fs::symlink;
+        for side in 0..2 {
+            let (dir, roots) = folders();
+            for root in &roots {
+                fs::create_dir(root.join("nested")).unwrap();
+                fs::write(root.join("nested/file.txt"), "old").unwrap();
+            }
+            let comparison = result(roots.clone(), CompareOptions::default());
+            let outside = dir.path().join("outside");
+            fs::create_dir(&outside).unwrap();
+            fs::write(outside.join("file.txt"), "outside unchanged").unwrap();
+            fs::rename(roots[side].join("nested"), roots[side].join("original")).unwrap();
+            symlink(&outside, roots[side].join("nested")).unwrap();
+            assert!(
+                comparison
+                    .copy_file(
+                        file_index(&comparison, "nested/file.txt"),
+                        CopyDirection::LeftToRight,
+                        &AtomicBool::new(false)
+                    )
+                    .is_err()
+            );
+            assert_eq!(
+                fs::read_to_string(outside.join("file.txt")).unwrap(),
+                "outside unchanged"
+            );
+        }
     }
 
     #[cfg(unix)]

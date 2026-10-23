@@ -5275,12 +5275,12 @@ dependencies = [
 
 [[package]]
 name = "ridff-tools"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "chrono",
  "embed-resource",
  "gpui-kit",
- "resvg 0.46.0",
+ "image",
  "semver",
  "serde",
  "serde_json",

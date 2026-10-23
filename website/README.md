@@ -14,11 +14,11 @@ Then open <http://127.0.0.1:4173>. No package installation or build step is requ
 
 ## Hosting
 
-Serve the contents of `website/` as the site's document root. Keep `index.html`, `styles.css`, `i18n.js`, `script.js`, and `favicon.svg` together. Assets use relative paths, so the page also works under a subdirectory.
+Serve the contents of `website/` as the site's document root. Keep `index.html`, `styles.css`, `i18n.js`, `script.js`, and `favicon.png` together. Assets use relative paths, so the page also works under a subdirectory.
 
-The browser favicon, header and footer logos, and interactive preview app icon all use `favicon.svg`. Update this single file to change the website's product icon.
+The browser favicon, header and footer logos, and interactive preview app icon all use `favicon.png`. Update this single file to change the website's product icon.
 
-The desktop application also generates its Windows ICO and macOS ICNS icons from this SVG during building and packaging.
+The desktop application also generates its Windows ICO and macOS ICNS icons from this PNG during building and packaging.
 
 The canonical URL and Open Graph URL in `index.html` point to `https://rdiff.zenogrid.co.kr/`. Update both if the public domain changes.
 

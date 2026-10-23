@@ -123,5 +123,5 @@ test("translations preserve CLI paths and download destinations", () => {
     assert.deepEqual(links[2], links[0], key);
   }
   assert.match(html, /<script src="\.\/i18n\.js"><\/script>\s*<link rel="stylesheet"/);
-  assert.equal([...html.matchAll(/<img src="\.\/favicon\.svg"/g)].length, 3);
+  assert.equal([...html.matchAll(/<img src="\.\/favicon\.png"/g)].length, 3);
 });

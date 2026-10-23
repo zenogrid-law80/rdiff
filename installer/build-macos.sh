@@ -11,7 +11,7 @@ if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     exit 1
 fi
 
-# The build script renders the same SVG used by the website and Windows app.
+# The build script resizes the same PNG used by the website and Windows app.
 iconset=$(cargo build --release --locked --bin rdiff --target "$target" --message-format=json-render-diagnostics | python3 -c '
 import json, pathlib, sys
 out_dirs = [
