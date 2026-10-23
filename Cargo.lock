@@ -5275,8 +5275,9 @@ dependencies = [
 
 [[package]]
 name = "ridff-tools"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
+ "chrono",
  "embed-resource",
  "gpui-kit",
  "resvg 0.46.0",

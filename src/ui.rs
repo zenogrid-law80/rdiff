@@ -60,6 +60,7 @@ fn read_files(files: Vec<(Side, PathBuf)>) -> Result<Vec<LoadedFile>, String> {
 }
 
 struct DiffApp {
+    _keystrokes: Option<Subscription>,
     settings: Entity<settings::SettingsPanel>,
     surface: Entity<DiffSurface>,
     _surface_subscription: Subscription,
@@ -100,21 +101,23 @@ struct DiffApp {
 }
 
 impl DiffApp {
-    fn new(paths: &[PathBuf], window: &mut Window, cx: &mut Context<Self>) -> Self {
+    fn new(paths: &[Option<PathBuf>; 2], window: &mut Window, cx: &mut Context<Self>) -> Self {
         let preferences = cx.global::<settings::Preferences>().clone();
         let mut left_text = String::new();
         let mut right_text = String::new();
-        let mut left_name = "No file selected".to_owned();
-        let mut right_name = "No file selected".to_owned();
+        let empty_name = if paths.iter().any(Option::is_some) {
+            "File not present on this side"
+        } else {
+            "No file selected"
+        };
+        let mut left_name = empty_name.to_owned();
+        let mut right_name = empty_name.to_owned();
         let mut status = "Open files or drop them here to start a comparison".to_owned();
         let mut errors = Vec::new();
         let (mut left_path, mut right_path) = (None, None);
         let (mut left_bom, mut right_bom) = (false, false);
-        if !paths.is_empty() {
-            left_name = paths[0].display().to_string();
-            right_name = paths[1].display().to_string();
-        }
         for (index, path) in paths.iter().enumerate() {
+            let Some(path) = path else { continue };
             match diff::read_text(path) {
                 Ok((text, bom)) => {
                     if index == 0 {
@@ -188,6 +191,7 @@ impl DiffApp {
         let focus = cx.focus_handle();
         window.focus(&focus, cx);
         let mut this = Self {
+            _keystrokes: None,
             settings: cx
                 .new(|cx| settings::SettingsPanel::new(settings::WindowKind::Diff, window, cx)),
             surface,
@@ -1581,6 +1585,20 @@ impl Render for DiffApp {
                             })),
                     )
                     .child(self.comparison_menu(cx))
+                    .child(
+                        Button::new("folder-comparison")
+                            .small()
+                            .ghost()
+                            .child(settings::icon("folder-open"))
+                            .label(tr("Folders"))
+                            .tooltip(tr("Compare two folders"))
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                if let Err(error) = crate::folder_ui::open([None, None], cx) {
+                                    this.status = error;
+                                    cx.notify();
+                                }
+                            })),
+                    )
                     .child(div().flex_1())
                     .child(
                         Button::new("split")
@@ -1724,111 +1742,8 @@ pub fn run(paths: Vec<PathBuf>) {
             init(cx);
             crate::syntax::init();
             settings::init(cx);
-            let kind = settings::WindowKind::Diff;
-            let (_, view) = open_window(
-                WindowOptions {
-                    window_bounds: Some(kind.bounds(cx)),
-                    window_min_size: Some(kind.min_size()),
-                    titlebar: Some(TitlebarOptions {
-                        title: Some(tr("rdiff — Text comparison").into()),
-                        ..Default::default()
-                    }),
-                    ..Default::default()
-                },
-                cx,
-                |window, cx| {
-                    let view = cx.new(|cx| DiffApp::new(&paths, window, cx));
-                    let weak = view.downgrade();
-                    window.on_window_should_close(cx, move |window, cx| {
-                        weak.update(cx, |this, cx| this.request_close(window, cx))
-                            .unwrap_or(true)
-                    });
-                    view
-                },
-            )
-            .expect("Failed to open rdiff window");
-            // Editor key bindings handle Ctrl+Enter themselves, before element
-            // key-down callbacks. Intercept application commands before dispatch
-            // so Compare cannot accidentally insert a newline into either buffer.
-            let view = view.downgrade();
-            cx.intercept_keystrokes(move |event, window, cx| {
-                let key = &event.keystroke;
-                if settings::popup_open() {
-                    return;
-                }
-                if key.modifiers.platform {
-                    return;
-                }
-                if key.key == "escape"
-                    && !key.modifiers.alt
-                    && !key.modifiers.control
-                    && !key.modifiers.shift
-                {
-                    let handled = view
-                        .update(cx, |this, cx| {
-                            if this.close_prompt {
-                                return false;
-                            }
-                            if this.request_close(window, cx) {
-                                window.remove_window();
-                            }
-                            true
-                        })
-                        .unwrap_or(false);
-                    if handled {
-                        cx.stop_propagation();
-                    }
-                    return;
-                }
-                let command = if key.modifiers.alt {
-                    if key.modifiers.control || key.modifiers.shift {
-                        return;
-                    }
-                    match key.key.as_str() {
-                        "down" => 2,
-                        "up" => 3,
-                        "left" => 7,
-                        "right" => 8,
-                        _ => return,
-                    }
-                } else {
-                    match (key.key.as_str(), key.modifiers.control, key.modifiers.shift) {
-                        ("enter", true, false) => 0,
-                        ("e", true, false) => 1,
-                        ("f7", false, false) => 2,
-                        ("f7", false, true) => 3,
-                        ("z", true, false) => 4,
-                        ("s", true, false) => 5,
-                        ("z", true, true) | ("y", true, false) => 6,
-                        _ => return,
-                    }
-                };
-                cx.stop_propagation();
-                let _ = view.update(cx, |this, cx| {
-                    if this.close_prompt {
-                        return;
-                    }
-                    match command {
-                        0 => {
-                            window.focus(&this.focus, cx);
-                            this.compare(cx);
-                        }
-                        1 => {
-                            this.unified = false;
-                            this.right.update(cx, |state, cx| state.focus(window, cx));
-                            cx.notify();
-                        }
-                        2 => this.navigate(true, cx),
-                        3 => this.navigate(false, cx),
-                        4 => this.undo_right(window, cx),
-                        5 => this.save_files(Side::Both, false, window, cx),
-                        6 => this.redo_right(window, cx),
-                        7 => this.apply_selected(true, window, cx),
-                        _ => this.apply_selected(false, window, cx),
-                    }
-                });
-            })
-            .detach();
+            open_pair([paths.first().cloned(), paths.get(1).cloned()], cx)
+                .expect("Failed to open rdiff window");
             cx.on_window_closed(|cx, _| {
                 if cx.windows().is_empty() {
                     cx.quit();
@@ -1837,6 +1752,121 @@ pub fn run(paths: Vec<PathBuf>) {
             .detach();
             cx.activate(true);
         });
+}
+
+pub fn open_pair(paths: [Option<PathBuf>; 2], cx: &mut App) -> Result<(), String> {
+    let kind = settings::WindowKind::Diff;
+    let (handle, view) = open_window(
+        WindowOptions {
+            window_bounds: Some(kind.bounds(cx)),
+            window_min_size: Some(kind.min_size()),
+            titlebar: Some(TitlebarOptions {
+                title: Some(tr("rdiff — Text comparison").into()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+        cx,
+        |window, cx| {
+            let view = cx.new(|cx| DiffApp::new(&paths, window, cx));
+            let weak = view.downgrade();
+            window.on_window_should_close(cx, move |window, cx| {
+                weak.update(cx, |this, cx| this.request_close(window, cx))
+                    .unwrap_or(true)
+            });
+            view
+        },
+    )
+    .map_err(|error| error.to_string())?;
+    // Editor key bindings handle Ctrl+Enter themselves, before element
+    // key-down callbacks. Intercept application commands before dispatch
+    // so Compare cannot accidentally insert a newline into either buffer.
+    let root = view.clone();
+    let view = view.downgrade();
+    let keystrokes = cx.intercept_keystrokes(move |event, window, cx| {
+        if window.window_handle() != handle {
+            return;
+        }
+        let key = &event.keystroke;
+        if settings::popup_open() {
+            return;
+        }
+        if key.modifiers.platform {
+            return;
+        }
+        if key.key == "escape"
+            && !key.modifiers.alt
+            && !key.modifiers.control
+            && !key.modifiers.shift
+        {
+            let handled = view
+                .update(cx, |this, cx| {
+                    if this.close_prompt {
+                        return false;
+                    }
+                    if this.request_close(window, cx) {
+                        window.remove_window();
+                    }
+                    true
+                })
+                .unwrap_or(false);
+            if handled {
+                cx.stop_propagation();
+            }
+            return;
+        }
+        let command = if key.modifiers.alt {
+            if key.modifiers.control || key.modifiers.shift {
+                return;
+            }
+            match key.key.as_str() {
+                "down" => 2,
+                "up" => 3,
+                "left" => 7,
+                "right" => 8,
+                _ => return,
+            }
+        } else {
+            match (key.key.as_str(), key.modifiers.control, key.modifiers.shift) {
+                ("enter", true, false) => 0,
+                ("e", true, false) => 1,
+                ("f7", false, false) => 2,
+                ("f7", false, true) => 3,
+                ("z", true, false) => 4,
+                ("s", true, false) => 5,
+                ("z", true, true) | ("y", true, false) => 6,
+                _ => return,
+            }
+        };
+        cx.stop_propagation();
+        let _ = view.update(cx, |this, cx| {
+            if this.close_prompt {
+                return;
+            }
+            match command {
+                0 => {
+                    window.focus(&this.focus, cx);
+                    this.compare(cx);
+                }
+                1 => {
+                    this.unified = false;
+                    this.remember(|preferences| preferences.unified = false, cx);
+                    this.right.update(cx, |state, cx| state.focus(window, cx));
+                    cx.notify();
+                }
+                2 => this.navigate(true, cx),
+                3 => this.navigate(false, cx),
+                4 => this.undo_right(window, cx),
+                5 => this.save_files(Side::Both, false, window, cx),
+                6 => this.redo_right(window, cx),
+                7 => this.apply_selected(true, window, cx),
+                _ => this.apply_selected(false, window, cx),
+            }
+        });
+    });
+    root.update(cx, |this, _| this._keystrokes = Some(keystrokes));
+    cx.activate(true);
+    Ok(())
 }
 
 #[cfg(test)]

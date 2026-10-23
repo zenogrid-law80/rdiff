@@ -1,6 +1,8 @@
 mod assets;
 mod cli;
 mod diff;
+mod folder;
+mod folder_ui;
 mod folding;
 mod i18n;
 mod merge;
@@ -25,7 +27,15 @@ fn main() -> std::process::ExitCode {
             }
         },
         Ok(cli::Command::Diff(paths)) => {
-            ui::run(paths);
+            if paths.iter().any(|path| path.is_dir()) {
+                folder_ui::run(paths);
+            } else {
+                ui::run(paths);
+            }
+            std::process::ExitCode::SUCCESS
+        }
+        Ok(cli::Command::Folders(paths)) => {
+            folder_ui::run(paths);
             std::process::ExitCode::SUCCESS
         }
         Ok(cli::Command::Merge(paths)) => std::process::ExitCode::from(merge_ui::run(paths)),

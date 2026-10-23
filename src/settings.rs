@@ -56,6 +56,13 @@ pub struct Preferences {
     pub show_base: bool,
     pub diff_window: Option<SavedWindow>,
     pub merge_window: Option<SavedWindow>,
+    pub folder_window: Option<SavedWindow>,
+    pub folder_paths: [Option<PathBuf>; 2],
+    pub folder_recursive: bool,
+    pub folder_filter: String,
+    pub folder_show_identical: bool,
+    pub folder_sort: crate::folder::SortColumn,
+    pub folder_sort_descending: bool,
 }
 
 impl Default for Preferences {
@@ -75,6 +82,13 @@ impl Default for Preferences {
             show_base: false,
             diff_window: None,
             merge_window: None,
+            folder_window: None,
+            folder_paths: [None, None],
+            folder_recursive: true,
+            folder_filter: "*.*".into(),
+            folder_show_identical: true,
+            folder_sort: crate::folder::SortColumn::default(),
+            folder_sort_descending: false,
         }
     }
 }
@@ -105,6 +119,7 @@ impl Global for Preferences {}
 pub enum WindowKind {
     Diff,
     Merge,
+    Folder,
 }
 
 impl WindowKind {
@@ -112,6 +127,7 @@ impl WindowKind {
         match self {
             Self::Diff => size(px(1040.), px(640.)),
             Self::Merge => size(px(1160.), px(720.)),
+            Self::Folder => size(px(1040.), px(640.)),
         }
     }
 
@@ -120,6 +136,7 @@ impl WindowKind {
         let saved = match self {
             Self::Diff => preferences.diff_window,
             Self::Merge => preferences.merge_window,
+            Self::Folder => preferences.folder_window,
         };
         let displays: Vec<_> = cx
             .displays()
@@ -132,6 +149,7 @@ impl WindowKind {
         let default_size = match self {
             Self::Diff => size(px(1360.), px(860.)),
             Self::Merge => size(px(1480.), px(920.)),
+            Self::Folder => size(px(1360.), px(860.)),
         };
         WindowBounds::centered(default_size, cx)
     }
@@ -355,6 +373,7 @@ pub fn color(value: u32) -> u32 {
         0x75404e => 0xf4bec8,
         0x32674f => 0xb8e0c6,
         0x32455b => 0xdceaf9,
+        0x3b3423 => 0xfff4c2,
         0xffffff => 0x202630,
         _ => value,
     }
@@ -422,6 +441,7 @@ impl SettingsPanel {
             |preferences| match kind {
                 WindowKind::Diff => preferences.diff_window = Some(saved),
                 WindowKind::Merge => preferences.merge_window = Some(saved),
+                WindowKind::Folder => preferences.folder_window = Some(saved),
             },
             cx,
         )
@@ -578,6 +598,13 @@ mod tests {
                     show_base: true,
                     diff_window: Some(WindowBounds::Windowed(bounds).into()),
                     merge_window: Some(WindowBounds::Maximized(bounds).into()),
+                    folder_window: Some(WindowBounds::Windowed(bounds).into()),
+                    folder_paths: [Some("C:/원본".into()), Some("C:/수정".into())],
+                    folder_recursive: false,
+                    folder_filter: "*.h;*.cpp".into(),
+                    folder_show_identical: false,
+                    folder_sort: crate::folder::SortColumn::Status,
+                    folder_sort_descending: true,
                 };
                 save_to(&path, &preferences).unwrap();
                 let restored: Preferences =

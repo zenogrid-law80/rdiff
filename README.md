@@ -14,7 +14,7 @@ For MSI installations, self-update downloads and verifies the new MSI, then wait
 
 The original v0.1.1 updater only replaces the executable. Install the v0.1.3 or later MSI once to enable MSI-based updates for subsequent releases. Version 0.1.3 also removes a PowerShell module dependency that could prevent v0.1.2 MSI updates from completing.
 
-For unattended installation, use `msiexec /i rdiff-0.1.9-windows-x86_64.msi /qn /norestart`.
+For unattended installation, use `msiexec /i rdiff-0.1.10-windows-x86_64.msi /qn /norestart`.
 
 On Apple Silicon Macs running macOS 11 or later, download [rdiff-macos-arm64.dmg](https://github.com/zenogrid-law80/rdiff/releases/latest/download/rdiff-macos-arm64.dmg), open it, and drag **rdiff.app** to **Applications**. Intel Mac builds are not currently provided. The Mac build is ad-hoc signed and has not been notarized by Apple. If macOS blocks the first launch, review the app in **System Settings → Privacy & Security → Open Anyway**. Install Mac updates manually by replacing the app with the latest DMG; the built-in updater currently supports Windows x64 only.
 
@@ -29,10 +29,23 @@ Building requires Rust stable and either the Windows MSVC C++ build tools or Xco
 ```powershell
 cargo run --bin rdiff
 cargo run --bin rdiff -- diff examples/before.rs examples/after.rs
+cargo run --bin rdiff -- folders path/to/left-folder path/to/right-folder
 cargo run --bin rdiff -- merge examples/merge-source.txt examples/merge-target.txt examples/merge-base.txt target/merge-result.txt
 ```
 
 Without arguments, rdiff opens an empty comparison window. Use **Open file** to select files to compare. The legacy `rdiff <file1> <file2>` form is also supported. After building, you can run `target/debug/rdiff.exe` directly. Use `rdiff --help` for command usage.
+
+## Folder comparison
+
+Click **Folders** in the text comparison toolbar, or run `rdiff folders` to select two folders. Enter or paste paths, use **Browse…**, or drop a folder onto each path field. `rdiff folders <left> <right>` opens a comparison directly; `rdiff diff <left> <right>` and the legacy two-path form also detect folders automatically.
+
+The table lists file names, relative folders, comparison results, both modification dates in local time, and extensions. Contents are compared byte for byte, including binary files and files larger than the text editor's 2 MiB limit. Equal timestamps or sizes alone never imply identical contents. Differences in whitespace, line endings, and BOMs count as differences in this view. Empty and one-sided directories, file/folder type conflicts, and read errors are shown explicitly.
+
+**Include subfolders** enables recursive comparison. **File filter** accepts semicolon-separated filename patterns such as `*.h;*.cpp` and exclusions such as `*.*;!*.tmp`; `*.*` includes extensionless files. Folder rows remain visible to show hierarchy and summarize their included descendants. Symbolic links are compared by their stored targets and never traversed. A scan stops with an error if either side exceeds 100,000 entries.
+
+Click a column heading to sort, and toggle **Show identical** to focus on differences. Select a file and choose **Open file diff**, double-click it, or press Enter to open the existing text comparison in a separate window. A missing side is displayed as empty; saving to that missing side is disabled. Binary, invalid UTF-8, and oversized files stay available in the folder results and report why they cannot open in the text editor. Opening or comparing folders does not write any source files. Refresh with **F5**, or press Enter in a path/filter field. **Cancel** or Esc stops a running scan; Esc otherwise closes the folder window.
+
+Folder window placement, last compared paths, recursive mode, filename filter, identical-item visibility, and sorting are restored on the next launch. After editing a path or scan option, press **Compare folders** before opening results. After editing and saving a file diff, refresh the folder view to update its result.
 
 ## GitHub self-update
 
@@ -162,7 +175,7 @@ SCSS and MDX use the CSS and Markdown grammars, respectively. C/C++ headers endi
 - Display comparison treats CRLF and LF as equivalent but distinguishes a missing final newline.
 - Line comparison runs in the background with a 300 ms computation limit. Complex inputs may produce larger change groups instead of a minimal edit sequence.
 - Word or character differences receive stronger highlighting inside changed blocks. UTF-8 boundaries are preserved. Large blocks or exhausted computation budgets fall back to whole-line highlighting.
-- Only visible lines are rendered. Folder comparison and Git repository browsing are outside the current scope.
+- Only visible lines are rendered. Folder comparison has a separate virtualized results table; Git repository browsing is outside the current scope.
 
 ## Three-way merge
 
