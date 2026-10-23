@@ -5275,7 +5275,7 @@ dependencies = [
 
 [[package]]
 name = "ridff-tools"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "chrono",
  "embed-resource",
